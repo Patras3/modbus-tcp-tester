@@ -1,38 +1,46 @@
 ## Modbus TCP Tester for Home Assistant
 
-Skanuj i testuj urządzenia Modbus TCP bezpośrednio z Home Assistant!
+Dynamiczny tester urządzeń Modbus TCP bezpośrednio z Home Assistant!
+
+### 🎉 v1.1.0 — Sidebar Panel + Dynamic Config
+
+**NOWE w tej wersji:**
+- ✅ **Panel w sidebarze** — natychmiastowy dostęp z głównego menu
+- ✅ **Dynamiczna konfiguracja** — IP, port, zakres ustawiasz na żywo (nie hardkodowane!)
+- ✅ **localStorage** — zapamiętuje ostatnie ustawienia
+- ✅ **Test Connection** — przed skanowaniem sprawdź dostępność
 
 ### Kluczowe funkcje
 
-✅ **Automatyczne wykrywanie urządzeń** — skanuje slave ID i identyfikuje typ urządzenia  
+✅ **Automatyczne wykrywanie urządzeń** — skanuje slave ID i identyfikuje typ  
 ✅ **Wsparcie dla Huawei** — falowniki SUN2000, dongle SDongle/EMMA, baterie LUNA, liczniki DTSU666  
-✅ **Test połączenia** — sprawdza ping, port, i Modbus TCP  
-✅ **Panel w sidebarze** — wygodny interfejs bez potrzeby konfiguracji Lovelace  
-✅ **Logi w czasie rzeczywistym** — obserwuj postęp skanowania na żywo  
-✅ **Rate limiting** — nie spamuje sieci, bezpieczne dla urządzeń  
-✅ **Usługi HA** — integracja z automatyzacjami i skryptami  
+✅ **Test połączenia** — ping, port, Modbus TCP  
+✅ **Panel w sidebarze** — bez potrzeby konfiguracji Lovelace  
+✅ **Logi w czasie rzeczywistym** — obserwuj postęp na żywo  
+✅ **Rate limiting** — bezpieczne dla urządzeń  
+✅ **Usługi HA** — integracja z automatyzacjami  
 
 ### Instalacja
 
-1. Dodaj repo do HACS jako Custom Repository
-2. Install
-3. Restart HA
-4. Configuration → Add Integration → Modbus TCP Tester
-5. Podaj IP i port urządzenia
+1. HACS → Integrations → Custom repositories
+2. URL: `https://github.com/Patras3/modbus-tcp-tester`
+3. Category: Integration
+4. Install → Restart HA
+5. **Sidebar → 🔍 Modbus Tester** (pojawi się automatycznie!)
 
-### Przykład użycia
+### Użycie
 
-```yaml
-type: custom:modbus-tester-card
-host: 192.168.2.5
-port: 502
-start_id: 1
-end_id: 100
-```
+1. Otwórz **🔍 Modbus Tester** w sidebarze
+2. Wpisz IP urządzenia (np. 192.168.2.5)
+3. Port: 502 (lub 6607)
+4. Range: 1-100 (lub dostosuj)
+5. Kliknij **Scan Now**
+
+Twoje ustawienia są automatycznie zapisywane!
 
 ### Dla kogo?
 
-- 🔧 Instalatorzy fotowoltaiki (diagnoza urządzeń Huawei)
+- 🔧 Instalatorzy fotowoltaiki (diagnoza Huawei)
 - 🏠 Użytkownicy Home Assistant (integracja solar)
 - 🐛 Debugging Modbus TCP (znajdź slave ID!)
 - 📊 Monitoring sieci Modbus
