@@ -170,6 +170,9 @@ class ModbusScanner:
             {"host": self.host, "port": self.port, "range": f"{start_id}-{end_id}"},
         )
 
+        # Wait before connecting - SDongle needs time to reset after test_connection
+        await asyncio.sleep(2)
+        
         try:
             async with AsyncModbusTcpClient(self.host, port=self.port, timeout=10) as client:
                 # Wait after connect (like huawei_solar)
