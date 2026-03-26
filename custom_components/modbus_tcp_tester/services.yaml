@@ -1,0 +1,78 @@
+scan:
+  name: Scan Modbus devices
+  description: Start scanning for Modbus TCP devices
+  fields:
+    host:
+      name: Host
+      description: IP address or hostname
+      required: false
+      example: "192.168.2.5"
+      selector:
+        text:
+    port:
+      name: Port
+      description: Modbus TCP port
+      required: false
+      default: 502
+      example: 502
+      selector:
+        number:
+          min: 1
+          max: 65535
+    start_id:
+      name: Start Slave ID
+      description: First slave ID to scan
+      required: false
+      default: 1
+      example: 1
+      selector:
+        number:
+          min: 1
+          max: 247
+    end_id:
+      name: End Slave ID
+      description: Last slave ID to scan
+      required: false
+      default: 100
+      example: 100
+      selector:
+        number:
+          min: 1
+          max: 247
+
+stop_scan:
+  name: Stop scan
+  description: Stop the current Modbus scan
+
+read_registers:
+  name: Read registers
+  description: Read raw Modbus registers from a device
+  fields:
+    slave_id:
+      name: Slave ID
+      description: Modbus slave ID
+      required: true
+      example: 1
+      selector:
+        number:
+          min: 1
+          max: 247
+    register:
+      name: Register address
+      description: Starting register address
+      required: true
+      example: 30000
+      selector:
+        number:
+          min: 0
+          max: 65535
+    count:
+      name: Register count
+      description: Number of registers to read
+      required: false
+      default: 10
+      example: 10
+      selector:
+        number:
+          min: 1
+          max: 125

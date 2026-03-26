@@ -1,0 +1,23 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Modbus TCP Tester Setup",
+        "description": "Configure Modbus TCP connection for scanning Huawei devices",
+        "data": {
+          "host": "IP Address or Hostname",
+          "port": "Modbus TCP Port",
+          "scan_range_start": "Scan Range Start (Slave ID)",
+          "scan_range_end": "Scan Range End (Slave ID)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the Modbus TCP host. Check IP address and port.",
+      "unknown": "Unexpected error occurred"
+    },
+    "abort": {
+      "already_configured": "This Modbus TCP host is already configured"
+    }
+  }
+}
