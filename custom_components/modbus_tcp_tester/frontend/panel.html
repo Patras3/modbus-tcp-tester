@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modbus TCP Tester</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-title">
+                <div class="header-icon-wrapper">
+                    <span class="mdi mdi-radar"></span>
+                </div>
+                <div>
+                    <h1>Modbus TCP Tester</h1>
+                    <p class="header-subtitle">Dynamiczny tester urządzeń Modbus</p>
+                </div>
+            </div>
+            <div class="header-status">
+                <div class="status-badge" id="scan-status">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Gotowy</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Configuration Card -->
+        <div class="card">
+            <div class="card-header">
+                <span class="mdi mdi-cog"></span>
+                <h2>Konfiguracja</h2>
+            </div>
+            <div class="card-content">
+                <div class="config-grid">
+                    <div class="form-group">
+                        <label for="host">IP Address *</label>
+                        <input type="text" id="host" placeholder="192.168.2.5">
+                    </div>
+                    <div class="form-group">
+                        <label for="port">Port</label>
+                        <input type="number" id="port" value="502" min="1" max="65535">
+                    </div>
+                    <div class="form-group">
+                        <label for="start-id">Start Slave ID</label>
+                        <input type="number" id="start-id" value="1" min="1" max="247">
+                    </div>
+                    <div class="form-group">
+                        <label for="end-id">End Slave ID</label>
+                        <input type="number" id="end-id" value="100" min="1" max="247">
+                    </div>
+                </div>
+                <div class="hint">
+                    <span class="mdi mdi-lightbulb-outline"></span>
+                    <strong>Wskazówka:</strong> Dla szybszego skanowania użyj mniejszego zakresu (np. 1-10 dla inverterów, 90-110 dla dongle)
+                </div>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="actions">
+            <button class="btn btn-primary" id="btn-scan" onclick="startScan()">
+                <span class="mdi mdi-magnify"></span>
+                Scan Now
+            </button>
+            <button class="btn btn-secondary" id="btn-stop" onclick="stopScan()" disabled>
+                <span class="mdi mdi-stop"></span>
+                Stop
+            </button>
+            <button class="btn btn-secondary" id="btn-test" onclick="testConnection()">
+                <span class="mdi mdi-connection"></span>
+                Test Connection
+            </button>
+            <button class="btn btn-secondary" onclick="clearLogs()">
+                <span class="mdi mdi-delete"></span>
+                Clear Logs
+            </button>
+        </div>
+
+        <!-- Devices Card -->
+        <div class="card" id="devices-card" style="display: none;">
+            <div class="card-header">
+                <span class="mdi mdi-devices"></span>
+                <h2>Discovered Devices (<span id="devices-count">0</span>)</h2>
+            </div>
+            <div class="card-content">
+                <div id="devices-list" class="devices-list"></div>
+            </div>
+        </div>
+
+        <!-- Logs Card -->
+        <div class="card">
+            <div class="card-header">
+                <span class="mdi mdi-text-box-outline"></span>
+                <h2>Logs</h2>
+            </div>
+            <div class="card-content">
+                <div id="logs" class="logs-container">
+                    <div class="log-empty">Brak logów. Kliknij "Scan Now" aby rozpocząć.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="panel.js"></script>
+</body>
+</html>

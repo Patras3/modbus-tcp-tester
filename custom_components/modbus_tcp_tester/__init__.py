@@ -1,4 +1,6 @@
 """Modbus TCP Tester integration for Home Assistant."""
+from __future__ import annotations
+
 import logging
 from pathlib import Path
 
@@ -6,38 +8,33 @@ from homeassistant.components import frontend
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers.typing import ConfigType
 
-from .api import ModbusTesterWebSocketAPI
 from .const import DOMAIN
+from .api import ModbusTesterWebSocketAPI
 from .scanner import ModbusScanner
 
 _LOGGER = logging.getLogger(__name__)
 
-CONFIG_SCHEMA = cv.empty_config_schema(DOMAIN)
-
+# Panel configuration
 PANEL_URL_PATH = DOMAIN
 PANEL_TITLE = "Modbus Tester"
 PANEL_ICON = "mdi:radar"
 
 
-async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up Modbus TCP Tester component (YAML)."""
-    # Register static path for panel JS
-    panel_path = Path(__file__).parent.parent.parent / "www"
-    
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Set up the Modbus TCP Tester component."""
+    # Register static path for frontend files
+    frontend_path = Path(__file__).parent / "frontend"
+
     await hass.http.async_register_static_paths([
         StaticPathConfig(
             url_path=f"/{DOMAIN}_panel",
-            path=str(panel_path / "modbus-tester-panel.js"),
+            path=str(frontend_path),
             cache_headers=False
         )
     ])
-    
-    _LOGGER.info("Modbus TCP Tester panel JS registered at /%s_panel", DOMAIN)
-    
-    hass.data.setdefault(DOMAIN, {})
+
+    _LOGGER.info("Modbus TCP Tester frontend registered at /%s_panel", DOMAIN)
     return True
 
 
@@ -45,23 +42,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Modbus TCP Tester from a config entry."""
     _LOGGER.info("Setting up Modbus TCP Tester")
     
-    # Create a global scanner instance
+    # Create scanner instance
     scanner = ModbusScanner(hass=hass, host="", port=502)
-    
+
+    hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         "scanner": scanner,
     }
-    
+
     # Register WebSocket API
     api = ModbusTesterWebSocketAPI(hass, scanner)
     api.async_register()
-    
+
     # Register services
-    await async_register_services(hass, scanner)
-    
-    # Register sidebar panel (iframe pointing to custom element)
-    panel_url = f"/{DOMAIN}_panel"
-    
+    await _async_register_services(hass, scanner)
+
+    # Register sidebar panel
+    panel_url = f"/{DOMAIN}_panel/panel.html"
+
     frontend.async_register_built_in_panel(
         hass,
         component_name="iframe",
@@ -71,28 +69,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         config={"url": panel_url},
         require_admin=False,
     )
-    
+
     _LOGGER.info("Modbus TCP Tester panel registered in sidebar")
-    
+
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     hass.data[DOMAIN].pop(entry.entry_id, None)
-    
+
     # Remove sidebar panel
     frontend.async_remove_panel(hass, PANEL_URL_PATH)
     _LOGGER.info("Modbus TCP Tester panel removed from sidebar")
-    
+
     return True
 
 
-async def async_register_services(hass: HomeAssistant, scanner: ModbusScanner) -> None:
-    """Register integration services."""
-    
+async def _async_register_services(hass: HomeAssistant, scanner: ModbusScanner) -> None:
+    """Register services for Modbus TCP Tester."""
+
     async def handle_scan(call):
-        """Handle scan service call."""
+        """Handle scan service."""
         host = call.data.get("host")
         port = call.data.get("port", 502)
         start_id = call.data.get("start_id", 1)
@@ -108,13 +106,13 @@ async def async_register_services(hass: HomeAssistant, scanner: ModbusScanner) -
             start_id=start_id,
             end_id=end_id,
         )
-    
+
     async def handle_stop_scan(call):
-        """Handle stop scan service call."""
+        """Handle stop scan service."""
         scanner.stop_scan()
-    
+
     async def handle_read_registers(call):
-        """Handle read registers service call."""
+        """Handle read registers service."""
         host = call.data.get("host")
         port = call.data.get("port", 502)
         slave_id = call.data.get("slave_id", 1)
@@ -135,7 +133,7 @@ async def async_register_services(hass: HomeAssistant, scanner: ModbusScanner) -
         )
         
         _LOGGER.info("Read registers result: %s", result)
-    
+
     # Register services only once
     if not hass.services.has_service(DOMAIN, "scan"):
         hass.services.async_register(DOMAIN, "scan", handle_scan)
