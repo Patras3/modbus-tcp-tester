@@ -38,6 +38,9 @@ _LOGGER = logging.getLogger(__name__)
 class ModbusScanner:
     """Modbus TCP Scanner for Huawei devices."""
 
+    # Cooldown between Modbus requests (like huawei_solar)
+    COOLDOWN_TIME = 0.1  # 100ms between requests
+
     def __init__(self, hass: HomeAssistant, host: str, port: int = 502):
         """Initialize scanner."""
         self.hass = hass
@@ -47,10 +50,20 @@ class ModbusScanner:
         self._stop_requested = False
         self._devices: list[dict[str, Any]] = []
         self._callbacks: list[Callable] = []
+        self._last_request_at: float = 0
 
     def register_callback(self, callback: Callable) -> None:
         """Register a callback for scan events."""
         self._callbacks.append(callback)
+
+    async def _cooldown(self) -> None:
+        """Wait for cooldown between requests (like huawei_solar)."""
+        import time
+        if self._last_request_at:
+            elapsed = time.time() - self._last_request_at
+            if elapsed < self.COOLDOWN_TIME:
+                await asyncio.sleep(self.COOLDOWN_TIME - elapsed)
+        self._last_request_at = time.time()
 
     async def _notify_callbacks(self, event_type: str, data: dict[str, Any]) -> None:
         """Notify all registered callbacks."""
@@ -256,6 +269,9 @@ class ModbusScanner:
         
         for attempt in range(max_retries):
             try:
+                # Cooldown before request (like huawei_solar)
+                await self._cooldown()
+                
                 # Read model name first
                 result = await client.read_holding_registers(
                     address=REG_MODEL_NAME, count=REG_MODEL_NAME_LEN, device_id=slave_id
@@ -304,6 +320,7 @@ class ModbusScanner:
 
         # Try to read firmware
         try:
+            await self._cooldown()
             fw_result = await client.read_holding_registers(
                 address=REG_FIRMWARE, count=REG_FIRMWARE_LEN, device_id=slave_id
             )
@@ -314,6 +331,7 @@ class ModbusScanner:
 
         # Try to read serial number
         try:
+            await self._cooldown()
             sn_result = await client.read_holding_registers(
                 address=REG_SERIAL_NUMBER, count=REG_SERIAL_NUMBER_LEN, device_id=slave_id
             )
@@ -325,18 +343,21 @@ class ModbusScanner:
         # Try to read power/voltage (inverter-specific)
         if device["type"] == DEVICE_TYPE_INVERTER:
             try:
+                await self._cooldown()
                 power_result = await client.read_holding_registers(
                     address=REG_ACTIVE_POWER, count=2, device_id=slave_id
                 )
                 if not power_result.isError():
                     device["active_power"] = self._decode_int32(power_result.registers)
 
+                await self._cooldown()
                 voltage_result = await client.read_holding_registers(
                     address=REG_GRID_VOLTAGE_A, count=1, device_id=slave_id
                 )
                 if not voltage_result.isError():
                     device["grid_voltage_a"] = voltage_result.registers[0] / 10.0
 
+                await self._cooldown()
                 rated_result = await client.read_holding_registers(
                     address=REG_RATED_POWER, count=2, device_id=slave_id
                 )
