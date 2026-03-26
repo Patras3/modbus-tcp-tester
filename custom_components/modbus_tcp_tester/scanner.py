@@ -263,69 +263,64 @@ class ModbusScanner:
 
         model = self._decode_string(result.registers)
 
-            # If we got a model, read more details
-            device = {
-                "slave_id": slave_id,
-                "model": model,
-                "type": self._guess_device_type(model),
-            }
+        # If we got a model, read more details
+        device = {
+            "slave_id": slave_id,
+            "model": model,
+            "type": self._guess_device_type(model),
+        }
 
-            # Try to read firmware
+        # Try to read firmware
+        try:
+            fw_result = await client.read_holding_registers(
+                address=REG_FIRMWARE, count=REG_FIRMWARE_LEN, device_id=slave_id
+            )
+            if not fw_result.isError():
+                device["firmware"] = self._decode_string(fw_result.registers)
+        except:
+            pass
+
+        # Try to read serial number
+        try:
+            sn_result = await client.read_holding_registers(
+                address=REG_SERIAL_NUMBER, count=REG_SERIAL_NUMBER_LEN, device_id=slave_id
+            )
+            if not sn_result.isError():
+                device["serial_number"] = self._decode_string(sn_result.registers)
+        except:
+            pass
+
+        # Try to read power/voltage (inverter-specific)
+        if device["type"] == DEVICE_TYPE_INVERTER:
             try:
-                fw_result = await client.read_holding_registers(
-                    address=REG_FIRMWARE, count=REG_FIRMWARE_LEN, device_id=slave_id
+                power_result = await client.read_holding_registers(
+                    address=REG_ACTIVE_POWER, count=2, device_id=slave_id
                 )
-                if not fw_result.isError():
-                    device["firmware"] = self._decode_string(fw_result.registers)
+                if not power_result.isError():
+                    device["active_power"] = self._decode_int32(power_result.registers)
+
+                voltage_result = await client.read_holding_registers(
+                    address=REG_GRID_VOLTAGE_A, count=1, device_id=slave_id
+                )
+                if not voltage_result.isError():
+                    device["grid_voltage_a"] = voltage_result.registers[0] / 10.0
+
+                rated_result = await client.read_holding_registers(
+                    address=REG_RATED_POWER, count=2, device_id=slave_id
+                )
+                if not rated_result.isError():
+                    device["rated_power"] = self._decode_uint32(rated_result.registers)
             except:
                 pass
 
-            # Try to read serial number
-            try:
-                sn_result = await client.read_holding_registers(
-                    address=REG_SERIAL_NUMBER, count=REG_SERIAL_NUMBER_LEN, device_id=slave_id
-                )
-                if not sn_result.isError():
-                    device["serial_number"] = self._decode_string(sn_result.registers)
-            except:
-                pass
-
-            # Try to read power/voltage (inverter-specific)
-            if device["type"] == DEVICE_TYPE_INVERTER:
-                try:
-                    power_result = await client.read_holding_registers(
-                        address=REG_ACTIVE_POWER, count=2, device_id=slave_id
-                    )
-                    if not power_result.isError():
-                        device["active_power"] = self._decode_int32(power_result.registers)
-
-                    voltage_result = await client.read_holding_registers(
-                        address=REG_GRID_VOLTAGE_A, count=1, device_id=slave_id
-                    )
-                    if not voltage_result.isError():
-                        device["grid_voltage_a"] = voltage_result.registers[0] / 10.0
-
-                    rated_result = await client.read_holding_registers(
-                        address=REG_RATED_POWER, count=2, device_id=slave_id
-                    )
-                    if not rated_result.isError():
-                        device["rated_power"] = self._decode_uint32(rated_result.registers)
-
-                except:
-                    pass
-
-            return device
-
-        except Exception as err:
-            _LOGGER.debug("Probe error slave %d: %s", slave_id, err)
-            return None
+        return device
 
     async def read_registers(
         self, slave_id: int, register: int, count: int = 10
     ) -> dict[str, Any] | None:
         """Read raw registers from a device."""
         try:
-            async with AsyncModbusTcpClient(self.host, port=self.port, timeout=2) as client:
+            async with AsyncModbusTcpClient(self.host, port=self.port, timeout=10) as client:
                 result = await client.read_holding_registers(address=register, count=count, device_id=slave_id)
 
                 if result.isError():
