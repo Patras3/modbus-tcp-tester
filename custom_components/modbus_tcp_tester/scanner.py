@@ -92,25 +92,34 @@ class ModbusScanner:
         except OSError as err:
             _LOGGER.debug("Socket test failed: %s", err)
 
-        # Test Modbus connection
+        # Test Modbus connection (with retry)
         if result["port_open"]:
-            try:
-                async with AsyncModbusTcpClient(test_host, port=test_port, timeout=2) as client:
-                    # Try to read from common slave IDs
-                    for slave_id in [1, 100]:
-                        try:
-                            response = await client.read_holding_registers(
-                                address=REG_MODEL_NAME, count=REG_MODEL_NAME_LEN, device_id=slave_id
-                            )
-                            if hasattr(response, 'registers') and response.registers:
-                                result["modbus"] = True
-                                _LOGGER.debug("Modbus test OK with slave %d", slave_id)
-                                break
-                        except Exception as e:
-                            _LOGGER.debug("Modbus test slave %d failed: %s", slave_id, e)
-                            continue
-            except Exception as err:
-                _LOGGER.warning("Modbus test failed: %s", err)
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    async with AsyncModbusTcpClient(test_host, port=test_port, timeout=3) as client:
+                        # Try to read from common slave IDs
+                        for slave_id in [1, 100]:
+                            try:
+                                response = await client.read_holding_registers(
+                                    address=REG_MODEL_NAME, count=REG_MODEL_NAME_LEN, device_id=slave_id
+                                )
+                                if hasattr(response, 'registers') and response.registers:
+                                    result["modbus"] = True
+                                    _LOGGER.debug("Modbus test OK with slave %d (attempt %d)", slave_id, attempt + 1)
+                                    break
+                            except Exception as e:
+                                _LOGGER.debug("Modbus test slave %d failed: %s", slave_id, e)
+                                continue
+                        
+                        if result["modbus"]:
+                            break
+                            
+                except Exception as err:
+                    _LOGGER.debug("Modbus test attempt %d failed: %s", attempt + 1, err)
+                
+                if not result["modbus"] and attempt < max_retries - 1:
+                    await asyncio.sleep(0.5)  # Wait before retry
 
         return result
 
@@ -205,19 +214,36 @@ class ModbusScanner:
         self._stop_requested = True
 
     async def _probe_device(
-        self, client: AsyncModbusTcpClient, slave_id: int
+        self, client: AsyncModbusTcpClient, slave_id: int, max_retries: int = 2
     ) -> dict[str, Any] | None:
-        """Probe a single Modbus slave ID."""
-        try:
-            # Read model name first
-            result = await client.read_holding_registers(
-                address=REG_MODEL_NAME, count=REG_MODEL_NAME_LEN, device_id=slave_id
-            )
+        """Probe a single Modbus slave ID with retry."""
+        result = None
+        
+        for attempt in range(max_retries):
+            try:
+                # Read model name first
+                result = await client.read_holding_registers(
+                    address=REG_MODEL_NAME, count=REG_MODEL_NAME_LEN, device_id=slave_id
+                )
+                
+                if hasattr(result, 'registers') and result.registers:
+                    break  # Success
+                    
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(0.2)
+                    
+            except Exception as e:
+                _LOGGER.debug("Probe slave %d attempt %d failed: %s", slave_id, attempt + 1, e)
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(0.2)
+        
+        if result is None or not hasattr(result, 'registers') or not result.registers:
+            return None
+        
+        if result.isError():
+            return None
 
-            if result.isError():
-                return None
-
-            model = self._decode_string(result.registers)
+        model = self._decode_string(result.registers)
 
             # If we got a model, read more details
             device = {
