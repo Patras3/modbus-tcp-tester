@@ -3,6 +3,7 @@ import logging
 import os
 from typing import Any
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
@@ -18,15 +19,21 @@ CONFIG_SCHEMA = cv.empty_config_schema(DOMAIN)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up Modbus TCP Tester component."""
-    _LOGGER.info("Setting up Modbus TCP Tester (singleton mode)")
-    
+    """Set up Modbus TCP Tester component (YAML)."""
     hass.data.setdefault(DOMAIN, {})
+    return True
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up Modbus TCP Tester from a config entry."""
+    _LOGGER.info("Setting up Modbus TCP Tester")
     
     # Create a global scanner instance (no specific host yet - frontend will provide)
     scanner = ModbusScanner(hass=hass, host="", port=502)
     
-    hass.data[DOMAIN]["scanner"] = scanner
+    hass.data[DOMAIN][entry.entry_id] = {
+        "scanner": scanner,
+    }
     
     # Register WebSocket API
     api = ModbusTesterWebSocketAPI(hass, scanner)
@@ -36,12 +43,14 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     await async_register_services(hass, scanner)
     
     # Add JS to frontend
-    await hass.http.async_register_static_paths([{
-        "url": "/modbus-tester-panel.js",
-        "path": os.path.join(os.path.dirname(__file__), "../../www/modbus-tester-panel.js"),
-    }])
-    
-    add_extra_js_url(hass, "/modbus-tester-panel.js")
+    panel_js_path = hass.config.path("www/modbus-tester-panel.js")
+    if os.path.exists(panel_js_path):
+        add_extra_js_url(hass, "/local/modbus-tester-panel.js")
+    else:
+        _LOGGER.warning(
+            "Panel JS not found at %s - please copy www/modbus-tester-panel.js to www/ folder",
+            panel_js_path
+        )
     
     # Register sidebar panel
     hass.components.frontend.async_register_built_in_panel(
@@ -59,6 +68,12 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     
     _LOGGER.info("Modbus TCP Tester setup complete - panel added to sidebar")
     
+    return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    hass.data[DOMAIN].pop(entry.entry_id)
     return True
 
 
@@ -111,6 +126,12 @@ async def async_register_services(hass: HomeAssistant, scanner: ModbusScanner) -
         
         _LOGGER.info("Read registers result: %s", result)
     
-    hass.services.async_register(DOMAIN, "scan", handle_scan)
-    hass.services.async_register(DOMAIN, "stop_scan", handle_stop_scan)
-    hass.services.async_register(DOMAIN, "read_registers", handle_read_registers)
+    # Register services only once (use has_service check)
+    if not hass.services.has_service(DOMAIN, "scan"):
+        hass.services.async_register(DOMAIN, "scan", handle_scan)
+    
+    if not hass.services.has_service(DOMAIN, "stop_scan"):
+        hass.services.async_register(DOMAIN, "stop_scan", handle_stop_scan)
+    
+    if not hass.services.has_service(DOMAIN, "read_registers"):
+        hass.services.async_register(DOMAIN, "read_registers", handle_read_registers)

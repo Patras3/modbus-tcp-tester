@@ -1,0 +1,14 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Modbus TCP Tester",
+        "description": "Ta integracja nie wymaga konfiguracji podczas instalacji.\n\nPo zainstalowaniu:\n• Panel pojawi się w **sidebarze** jako **🔍 Modbus Tester**\n• Kliknij panel żeby ustawić IP, port i zakres skanowania\n• Wszystkie ustawienia są dynamiczne — możesz zmieniać w locie!\n\nKliknij **Submit** żeby dokończyć instalację.",
+        "data": {}
+      }
+    },
+    "abort": {
+      "already_configured": "Modbus TCP Tester jest już zainstalowany. Panel dostępny w sidebarze: 🔍 Modbus Tester"
+    }
+  }
+}
