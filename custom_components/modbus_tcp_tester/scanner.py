@@ -100,12 +100,14 @@ class ModbusScanner:
                     for slave_id in [1, 100]:
                         try:
                             response = await client.read_holding_registers(
-                                address=REG_MODEL_NAME, count=1, device_id=slave_id
+                                address=REG_MODEL_NAME, count=REG_MODEL_NAME_LEN, device_id=slave_id
                             )
-                            if not response.isError():
+                            if hasattr(response, 'registers') and response.registers:
                                 result["modbus"] = True
+                                _LOGGER.debug("Modbus test OK with slave %d", slave_id)
                                 break
-                        except:
+                        except Exception as e:
+                            _LOGGER.debug("Modbus test slave %d failed: %s", slave_id, e)
                             continue
             except Exception as err:
                 _LOGGER.warning("Modbus test failed: %s", err)
