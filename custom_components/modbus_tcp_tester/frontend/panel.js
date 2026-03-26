@@ -58,9 +58,10 @@ function sendWsCommand(type, data = {}) {
         }
         
         const id = ++wsMessageId;
+        // 60s timeout - test_connection can take up to 30s with retries
         const timeout = setTimeout(() => {
             reject(new Error('WebSocket timeout'));
-        }, 10000);
+        }, 60000);
         
         const handler = (event) => {
             const msg = JSON.parse(event.data);
