@@ -1,7 +1,9 @@
 """Modbus TCP Tester integration for Home Assistant."""
 import logging
-import os
+from pathlib import Path
 
+from homeassistant.components import frontend
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
@@ -15,9 +17,26 @@ _LOGGER = logging.getLogger(__name__)
 
 CONFIG_SCHEMA = cv.empty_config_schema(DOMAIN)
 
+PANEL_URL_PATH = DOMAIN
+PANEL_TITLE = "Modbus Tester"
+PANEL_ICON = "mdi:radar"
+
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up Modbus TCP Tester component (YAML)."""
+    # Register static path for panel JS
+    panel_path = Path(__file__).parent.parent.parent / "www"
+    
+    await hass.http.async_register_static_paths([
+        StaticPathConfig(
+            url_path=f"/{DOMAIN}_panel",
+            path=str(panel_path / "modbus-tester-panel.js"),
+            cache_headers=False
+        )
+    ])
+    
+    _LOGGER.info("Modbus TCP Tester panel JS registered at /%s_panel", DOMAIN)
+    
     hass.data.setdefault(DOMAIN, {})
     return True
 
@@ -40,33 +59,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register services
     await async_register_services(hass, scanner)
     
-    # Register frontend panel
-    await hass.http.async_register_static_paths(
-        [
-            {
-                "url": "/modbus_tcp_tester_panel",
-                "path": hass.config.path("www/modbus-tester-panel.js"),
-            }
-        ]
+    # Register sidebar panel (iframe pointing to custom element)
+    panel_url = f"/{DOMAIN}_panel"
+    
+    frontend.async_register_built_in_panel(
+        hass,
+        component_name="iframe",
+        sidebar_title=PANEL_TITLE,
+        sidebar_icon=PANEL_ICON,
+        frontend_url_path=PANEL_URL_PATH,
+        config={"url": panel_url},
+        require_admin=False,
     )
     
-    # Add panel to sidebar
-    hass.data.setdefault("frontend_panels", {})
-    hass.data["frontend_panels"]["modbus-tester"] = {
-        "component_name": "custom",
-        "sidebar_title": "Modbus Tester",
-        "sidebar_icon": "mdi:radar",
-        "url_path": "modbus-tester",
-        "require_admin": False,
-        "config": {
-            "_panel_custom": {
-                "name": "modbus-tester-panel",
-                "js_url": "/modbus_tcp_tester_panel",
-            }
-        },
-    }
-    
-    _LOGGER.info("Modbus TCP Tester setup complete - panel registered")
+    _LOGGER.info("Modbus TCP Tester panel registered in sidebar")
     
     return True
 
@@ -75,8 +81,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     hass.data[DOMAIN].pop(entry.entry_id, None)
     
-    # Remove panel
-    hass.data.get("frontend_panels", {}).pop("modbus-tester", None)
+    # Remove sidebar panel
+    frontend.async_remove_panel(hass, PANEL_URL_PATH)
+    _LOGGER.info("Modbus TCP Tester panel removed from sidebar")
     
     return True
 
