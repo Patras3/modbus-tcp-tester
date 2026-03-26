@@ -185,31 +185,41 @@ class ModbusScanner:
                     current += 1
                     progress = int((current / total) * 100)
 
-                    # Fire progress event
-                    self.hass.bus.async_fire(
-                        EVENT_SCAN_PROGRESS,
-                        {"slave_id": slave_id, "progress": progress},
-                    )
-
-                    await self._notify_callbacks(
-                        "scan_progress",
-                        {"slave_id": slave_id, "progress": progress},
-                    )
-
+                    # Probe device first
+                    device = None
+                    result_text = "no response"
+                    found = False
+                    
                     try:
                         device = await self._probe_device(client, slave_id)
                         if device:
+                            found = True
+                            if device.get("type") == "error":
+                                result_text = f"responds with error"
+                            else:
+                                result_text = device.get("model", "found")
                             self._devices.append(device)
 
                             # Fire device found event
                             self.hass.bus.async_fire(EVENT_DEVICE_FOUND, device)
-
                             await self._notify_callbacks("device_found", device)
 
-                    except ModbusException:
-                        pass  # Silent fail for no response
+                    except ModbusException as e:
+                        result_text = f"ModbusException: {e}"
                     except Exception as err:
+                        result_text = f"error: {err}"
                         _LOGGER.debug("Error probing slave %d: %s", slave_id, err)
+
+                    # Fire progress event AFTER probe with result
+                    self.hass.bus.async_fire(
+                        EVENT_SCAN_PROGRESS,
+                        {"slave_id": slave_id, "progress": progress, "found": found, "result": result_text},
+                    )
+
+                    await self._notify_callbacks(
+                        "scan_progress",
+                        {"slave_id": slave_id, "progress": progress, "found": found, "result": result_text},
+                    )
 
                     # Rate limiting to avoid spamming
                     await asyncio.sleep(0.05)

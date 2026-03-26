@@ -140,10 +140,9 @@ function handleEvent(event) {
             addLog('🚀 Skanowanie rozpoczęte', 'success');
             break;
         case 'modbus_tcp_tester_scan_progress':
-            // Update progress less frequently
-            if (data.progress % 10 === 0 || data.progress === 100) {
-                addLog(`⏳ Postęp: ${data.progress}% (Slave ${data.slave_id})`);
-            }
+            // Show every slave with status
+            const status = data.found ? '✅' : '❌';
+            addLog(`${status} Slave ${data.slave_id}: ${data.result || 'no response'}`);
             break;
         case 'modbus_tcp_tester_device_found':
             addLog(`✅ Znaleziono ${data.type}: ${data.model} (Slave ${data.slave_id})`, 'success');
