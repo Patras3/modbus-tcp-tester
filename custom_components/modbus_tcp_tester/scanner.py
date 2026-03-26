@@ -92,12 +92,18 @@ class ModbusScanner:
         except OSError as err:
             _LOGGER.debug("Socket test failed: %s", err)
 
-        # Test Modbus connection (with retry)
+        # Test Modbus connection (with retry - like huawei_solar)
+        # huawei_solar uses: timeout=10s, max_tries=6, exponential backoff
         if result["port_open"]:
-            max_retries = 3
+            max_retries = 6
+            base_delay = 0.5  # Start with 0.5s, then 1s, 2s, 4s...
+            
             for attempt in range(max_retries):
                 try:
-                    async with AsyncModbusTcpClient(test_host, port=test_port, timeout=3) as client:
+                    async with AsyncModbusTcpClient(test_host, port=test_port, timeout=10) as client:
+                        # Wait after connect (like huawei_solar DEFAULT_WAIT=1)
+                        await asyncio.sleep(0.5)
+                        
                         # Try to read from common slave IDs
                         for slave_id in [1, 100]:
                             try:
@@ -106,20 +112,24 @@ class ModbusScanner:
                                 )
                                 if hasattr(response, 'registers') and response.registers:
                                     result["modbus"] = True
-                                    _LOGGER.debug("Modbus test OK with slave %d (attempt %d)", slave_id, attempt + 1)
+                                    _LOGGER.info("Modbus test OK with slave %d (attempt %d/%d)", slave_id, attempt + 1, max_retries)
                                     break
                             except Exception as e:
                                 _LOGGER.debug("Modbus test slave %d failed: %s", slave_id, e)
+                                await asyncio.sleep(0.1)  # Cooldown between slaves
                                 continue
                         
                         if result["modbus"]:
                             break
                             
                 except Exception as err:
-                    _LOGGER.debug("Modbus test attempt %d failed: %s", attempt + 1, err)
+                    _LOGGER.debug("Modbus test attempt %d/%d failed: %s", attempt + 1, max_retries, err)
                 
                 if not result["modbus"] and attempt < max_retries - 1:
-                    await asyncio.sleep(0.5)  # Wait before retry
+                    # Exponential backoff: 0.5, 1, 2, 4, 8...
+                    delay = base_delay * (2 ** attempt)
+                    _LOGGER.debug("Retrying in %.1fs...", delay)
+                    await asyncio.sleep(delay)
 
         return result
 
@@ -153,7 +163,10 @@ class ModbusScanner:
         )
 
         try:
-            async with AsyncModbusTcpClient(self.host, port=self.port, timeout=1) as client:
+            async with AsyncModbusTcpClient(self.host, port=self.port, timeout=10) as client:
+                # Wait after connect (like huawei_solar)
+                await asyncio.sleep(0.5)
+                
                 total = end_id - start_id + 1
                 current = 0
 
@@ -214,10 +227,11 @@ class ModbusScanner:
         self._stop_requested = True
 
     async def _probe_device(
-        self, client: AsyncModbusTcpClient, slave_id: int, max_retries: int = 2
+        self, client: AsyncModbusTcpClient, slave_id: int, max_retries: int = 4
     ) -> dict[str, Any] | None:
-        """Probe a single Modbus slave ID with retry."""
+        """Probe a single Modbus slave ID with retry (like huawei_solar)."""
         result = None
+        base_delay = 0.3
         
         for attempt in range(max_retries):
             try:
@@ -227,15 +241,19 @@ class ModbusScanner:
                 )
                 
                 if hasattr(result, 'registers') and result.registers:
+                    if attempt > 0:
+                        _LOGGER.debug("Probe slave %d succeeded on attempt %d", slave_id, attempt + 1)
                     break  # Success
                     
                 if attempt < max_retries - 1:
-                    await asyncio.sleep(0.2)
+                    delay = base_delay * (2 ** attempt)  # 0.3, 0.6, 1.2, 2.4...
+                    await asyncio.sleep(delay)
                     
             except Exception as e:
-                _LOGGER.debug("Probe slave %d attempt %d failed: %s", slave_id, attempt + 1, e)
+                _LOGGER.debug("Probe slave %d attempt %d/%d failed: %s", slave_id, attempt + 1, max_retries, e)
                 if attempt < max_retries - 1:
-                    await asyncio.sleep(0.2)
+                    delay = base_delay * (2 ** attempt)
+                    await asyncio.sleep(delay)
         
         if result is None or not hasattr(result, 'registers') or not result.registers:
             return None
