@@ -73,24 +73,32 @@ class ModbusScanner:
             "modbus": False,
         }
 
-        # Test socket connection (async)
-        try:
-            _, writer = await asyncio.wait_for(
-                asyncio.open_connection(test_host, test_port),
-                timeout=3
-            )
-            writer.close()
-            await writer.wait_closed()
-            result["port_open"] = True
-            result["ping"] = True
-            _LOGGER.debug("Socket connection to %s:%d successful", test_host, test_port)
-        except asyncio.TimeoutError:
-            _LOGGER.debug("Socket connection to %s:%d timed out", test_host, test_port)
-        except ConnectionRefusedError:
-            result["ping"] = True  # Host exists but port refused
-            _LOGGER.debug("Connection refused to %s:%d", test_host, test_port)
-        except OSError as err:
-            _LOGGER.debug("Socket test failed: %s", err)
+        # Test socket connection (async) with retry
+        socket_retries = 3
+        for socket_attempt in range(socket_retries):
+            try:
+                _, writer = await asyncio.wait_for(
+                    asyncio.open_connection(test_host, test_port),
+                    timeout=5
+                )
+                writer.close()
+                await writer.wait_closed()
+                result["port_open"] = True
+                result["ping"] = True
+                _LOGGER.debug("Socket connection to %s:%d successful (attempt %d)", test_host, test_port, socket_attempt + 1)
+                break
+            except asyncio.TimeoutError:
+                _LOGGER.debug("Socket connection to %s:%d timed out (attempt %d/%d)", test_host, test_port, socket_attempt + 1, socket_retries)
+                if socket_attempt < socket_retries - 1:
+                    await asyncio.sleep(1)
+            except ConnectionRefusedError:
+                result["ping"] = True  # Host exists but port refused
+                _LOGGER.debug("Connection refused to %s:%d", test_host, test_port)
+                break
+            except OSError as err:
+                _LOGGER.debug("Socket test failed (attempt %d/%d): %s", socket_attempt + 1, socket_retries, err)
+                if socket_attempt < socket_retries - 1:
+                    await asyncio.sleep(1)
 
         # Test Modbus connection (with retry - like huawei_solar)
         # huawei_solar uses: timeout=10s, max_tries=6, exponential backoff
