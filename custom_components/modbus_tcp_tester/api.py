@@ -61,7 +61,7 @@ async def ws_test_connection(
     vol.Required("host"): str,
     vol.Optional("port", default=502): int,
     vol.Optional("start_id", default=1): int,
-    vol.Optional("end_id", default=100): int,
+    vol.Optional("end_id", default=10): int,  # Default 1-10 for quick scan
 })
 @websocket_api.async_response
 async def ws_start_scan(

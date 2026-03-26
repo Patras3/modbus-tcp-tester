@@ -209,16 +209,19 @@ class ModbusScanner:
                     try:
                         device = await self._probe_device(client, slave_id)
                         if device:
-                            found = True
                             if device.get("type") == "error":
-                                result_text = f"responds with error"
+                                # Error response - don't add to found devices, just log
+                                found = False  # Not a real device
+                                result_text = f"error: {device.get('error', 'unknown')[:60]}"
                             else:
+                                # Real device found
+                                found = True
                                 result_text = device.get("model", "found")
-                            self._devices.append(device)
+                                self._devices.append(device)
 
-                            # Fire device found event
-                            self.hass.bus.async_fire(EVENT_DEVICE_FOUND, device)
-                            await self._notify_callbacks("device_found", device)
+                                # Fire device found event (only for real devices)
+                                self.hass.bus.async_fire(EVENT_DEVICE_FOUND, device)
+                                await self._notify_callbacks("device_found", device)
 
                     except ModbusException as e:
                         result_text = f"ModbusException: {e}"

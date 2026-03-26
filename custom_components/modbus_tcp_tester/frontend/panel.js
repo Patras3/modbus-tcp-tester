@@ -13,7 +13,7 @@ function loadConfig() {
         document.getElementById('host').value = config.host || '';
         document.getElementById('port').value = config.port || 502;
         document.getElementById('start-id').value = config.start_id || 1;
-        document.getElementById('end-id').value = config.end_id || 100;
+        document.getElementById('end-id').value = config.end_id || 10;
     }
 }
 
@@ -23,7 +23,7 @@ function saveConfig() {
         host: document.getElementById('host').value,
         port: parseInt(document.getElementById('port').value) || 502,
         start_id: parseInt(document.getElementById('start-id').value) || 1,
-        end_id: parseInt(document.getElementById('end-id').value) || 100
+        end_id: parseInt(document.getElementById('end-id').value) || 10
     };
     localStorage.setItem('modbus_tester_config', JSON.stringify(config));
     return config;
@@ -141,8 +141,13 @@ function handleEvent(event) {
             break;
         case 'modbus_tcp_tester_scan_progress':
             // Show every slave with status
-            const status = data.found ? '✅' : '❌';
-            addLog(`${status} Slave ${data.slave_id}: ${data.result || 'no response'}`);
+            if (data.found) {
+                addLog(`✅ Slave ${data.slave_id}: ${data.result || 'found'}`, 'success');
+            } else if (data.result && data.result.startsWith('error:')) {
+                addLog(`⚠️ Slave ${data.slave_id}: ${data.result}`, 'warning');
+            } else {
+                addLog(`❌ Slave ${data.slave_id}: ${data.result || 'no response'}`);
+            }
             break;
         case 'modbus_tcp_tester_device_found':
             addLog(`✅ Znaleziono ${data.type}: ${data.model} (Slave ${data.slave_id})`, 'success');
