@@ -2,6 +2,8 @@
 import logging
 from typing import Any
 
+import voluptuous as vol
+
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 
@@ -22,86 +24,80 @@ class ModbusTesterWebSocketAPI:
     @callback
     def async_register(self) -> None:
         """Register WebSocket commands."""
-        websocket_api.async_register_command(
-            self.hass,
-            f"{DOMAIN}/get_status",
-            self.websocket_get_status,
-            websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend({}),
-        )
-
-        websocket_api.async_register_command(
-            self.hass,
-            f"{DOMAIN}/start_scan",
-            self.websocket_start_scan,
-            websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
-                {
-                    "host": str,
-                    "port": int,
-                    "start_id": int,
-                    "end_id": int,
-                }
-            ),
-        )
-
-        websocket_api.async_register_command(
-            self.hass,
-            f"{DOMAIN}/stop_scan",
-            self.websocket_stop_scan,
-            websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend({}),
-        )
-
-        websocket_api.async_register_command(
-            self.hass,
-            f"{DOMAIN}/get_devices",
-            self.websocket_get_devices,
-            websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend({}),
-        )
-
+        
+        # Test connection
         websocket_api.async_register_command(
             self.hass,
             f"{DOMAIN}/test_connection",
-            self.websocket_test_connection,
-            websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
-                {
-                    "host": str,
-                    "port": int,
-                }
-            ),
+            self._handle_test_connection,
+            websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend({
+                vol.Required("host"): str,
+                vol.Optional("port", default=502): int,
+            }),
         )
 
+        # Start scan
+        websocket_api.async_register_command(
+            self.hass,
+            f"{DOMAIN}/start_scan",
+            self._handle_start_scan,
+            websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend({
+                vol.Required("host"): str,
+                vol.Optional("port", default=502): int,
+                vol.Optional("start_id", default=1): int,
+                vol.Optional("end_id", default=100): int,
+            }),
+        )
+
+        # Stop scan
+        websocket_api.async_register_command(
+            self.hass,
+            f"{DOMAIN}/stop_scan",
+            self._handle_stop_scan,
+            websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend({}),
+        )
+
+        # Get devices
+        websocket_api.async_register_command(
+            self.hass,
+            f"{DOMAIN}/get_devices",
+            self._handle_get_devices,
+            websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend({}),
+        )
+
+        # Read registers
         websocket_api.async_register_command(
             self.hass,
             f"{DOMAIN}/read_registers",
-            self.websocket_read_registers,
-            websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
-                {
-                    "slave_id": int,
-                    "register": int,
-                    "count": int,
-                }
-            ),
+            self._handle_read_registers,
+            websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend({
+                vol.Required("host"): str,
+                vol.Optional("port", default=502): int,
+                vol.Required("slave_id"): int,
+                vol.Required("register"): int,
+                vol.Optional("count", default=10): int,
+            }),
         )
 
     @websocket_api.async_response
-    async def websocket_get_status(
+    async def _handle_test_connection(
         self,
         hass: HomeAssistant,
         connection: websocket_api.ActiveConnection,
         msg: dict[str, Any],
     ) -> None:
-        """Get current scanner status."""
-        connection.send_result(
-            msg["id"],
-            {
-                "host": self.scanner.host,
-                "port": self.scanner.port,
-                "scanning": self.scanner.is_scanning,
-                "devices_count": len(self.scanner.get_devices()),
-            },
-        )
+        """Test connection to Modbus host."""
+        host = msg["host"]
+        port = msg.get("port", 502)
+        
+        _LOGGER.info("Testing connection to %s:%d", host, port)
+        
+        result = await self.scanner.test_connection(host, port)
+        
+        connection.send_result(msg["id"], result)
 
     @websocket_api.async_response
-    async def websocket_start_scan(
+    async def _handle_start_scan(
         self,
         hass: HomeAssistant,
         connection: websocket_api.ActiveConnection,
@@ -110,15 +106,14 @@ class ModbusTesterWebSocketAPI:
         """Start Modbus scan."""
         await self.scanner.start_scan(
             host=msg["host"],
-            port=msg["port"],
-            start_id=msg["start_id"],
-            end_id=msg["end_id"],
+            port=msg.get("port", 502),
+            start_id=msg.get("start_id", 1),
+            end_id=msg.get("end_id", 100),
         )
-
         connection.send_result(msg["id"], {"success": True})
 
     @websocket_api.async_response
-    async def websocket_stop_scan(
+    async def _handle_stop_scan(
         self,
         hass: HomeAssistant,
         connection: websocket_api.ActiveConnection,
@@ -129,7 +124,7 @@ class ModbusTesterWebSocketAPI:
         connection.send_result(msg["id"], {"success": True})
 
     @websocket_api.async_response
-    async def websocket_get_devices(
+    async def _handle_get_devices(
         self,
         hass: HomeAssistant,
         connection: websocket_api.ActiveConnection,
@@ -139,27 +134,19 @@ class ModbusTesterWebSocketAPI:
         connection.send_result(msg["id"], {"devices": self.scanner.get_devices()})
 
     @websocket_api.async_response
-    async def websocket_test_connection(
-        self,
-        hass: HomeAssistant,
-        connection: websocket_api.ActiveConnection,
-        msg: dict[str, Any],
-    ) -> None:
-        """Test connection to Modbus host."""
-        result = await self.scanner.test_connection()
-        connection.send_result(msg["id"], result)
-
-    @websocket_api.async_response
-    async def websocket_read_registers(
+    async def _handle_read_registers(
         self,
         hass: HomeAssistant,
         connection: websocket_api.ActiveConnection,
         msg: dict[str, Any],
     ) -> None:
         """Read raw registers."""
+        self.scanner.host = msg["host"]
+        self.scanner.port = msg.get("port", 502)
+        
         result = await self.scanner.read_registers(
             slave_id=msg["slave_id"],
             register=msg["register"],
-            count=msg["count"],
+            count=msg.get("count", 10),
         )
         connection.send_result(msg["id"], result)
