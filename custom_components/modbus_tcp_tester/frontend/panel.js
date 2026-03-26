@@ -297,15 +297,20 @@ function updateDevicesList() {
     card.style.display = 'block';
     
     container.innerHTML = devices.map(device => `
-        <div class="device-item">
+        <div class="device-item ${device.type === 'error' ? 'device-error' : ''}">
             <div class="device-icon">${getDeviceIcon(device.type)}</div>
             <div class="device-info">
-                <div class="device-title">Slave ${device.slave_id}: ${device.model || 'Unknown'}</div>
+                <div class="device-title">Slave ${device.slave_id}: ${device.type === 'error' ? 'Responds with error' : (device.model || 'Unknown')}</div>
                 <div class="device-details">
                     <div class="device-detail">
                         <span class="device-detail-label">Typ:</span>
                         <span class="device-detail-value">${device.type}</span>
                     </div>
+                    ${device.error ? `
+                    <div class="device-detail">
+                        <span class="device-detail-label">Error:</span>
+                        <span class="device-detail-value" style="color: #ff9800;">${device.error.substring(0, 50)}...</span>
+                    </div>` : ''}
                     ${device.firmware ? `
                     <div class="device-detail">
                         <span class="device-detail-label">Firmware:</span>
@@ -329,6 +334,7 @@ function getDeviceIcon(type) {
         dongle: '📡',
         battery: '🔋',
         meter: '⚡',
+        error: '⚠️',
         unknown: '❓'
     };
     return icons[type] || icons.unknown;

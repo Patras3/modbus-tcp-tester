@@ -30,6 +30,7 @@ DEVICE_TYPE_DONGLE = "dongle"
 DEVICE_TYPE_BATTERY = "battery"
 DEVICE_TYPE_METER = "meter"
 DEVICE_TYPE_UNKNOWN = "unknown"
+DEVICE_TYPE_ERROR = "error"  # Device responds but with error
 
 # Modbus registers (Huawei specific)
 REG_MODEL_NAME = 30000

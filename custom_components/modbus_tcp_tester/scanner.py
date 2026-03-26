@@ -263,10 +263,21 @@ class ModbusScanner:
                     delay = base_delay * (2 ** attempt)
                     await asyncio.sleep(delay)
         
-        if result is None or not hasattr(result, 'registers') or not result.registers:
+        if result is None:
             return None
         
+        # Check if we got an error response (device exists but returned error)
         if result.isError():
+            # Device responded with error - still counts as "found"
+            return {
+                "slave_id": slave_id,
+                "model": f"Error: {result}",
+                "type": "error",
+                "responds": True,
+                "error": str(result),
+            }
+        
+        if not hasattr(result, 'registers') or not result.registers:
             return None
 
         model = self._decode_string(result.registers)
