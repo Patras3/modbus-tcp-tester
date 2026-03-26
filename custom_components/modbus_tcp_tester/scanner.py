@@ -73,16 +73,24 @@ class ModbusScanner:
             "modbus": False,
         }
 
-        # Test socket connection
+        # Test socket connection (async)
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(2)
-            connect_result = sock.connect_ex((test_host, test_port))
-            sock.close()
-            result["port_open"] = connect_result == 0
-            result["ping"] = connect_result == 0
-        except Exception as err:
-            _LOGGER.warning("Socket test failed: %s", err)
+            _, writer = await asyncio.wait_for(
+                asyncio.open_connection(test_host, test_port),
+                timeout=3
+            )
+            writer.close()
+            await writer.wait_closed()
+            result["port_open"] = True
+            result["ping"] = True
+            _LOGGER.debug("Socket connection to %s:%d successful", test_host, test_port)
+        except asyncio.TimeoutError:
+            _LOGGER.debug("Socket connection to %s:%d timed out", test_host, test_port)
+        except ConnectionRefusedError:
+            result["ping"] = True  # Host exists but port refused
+            _LOGGER.debug("Connection refused to %s:%d", test_host, test_port)
+        except OSError as err:
+            _LOGGER.debug("Socket test failed: %s", err)
 
         # Test Modbus connection
         if result["port_open"]:
@@ -92,7 +100,7 @@ class ModbusScanner:
                     for slave_id in [1, 100]:
                         try:
                             response = await client.read_holding_registers(
-                                REG_MODEL_NAME, 1, slave=slave_id
+                                REG_MODEL_NAME, 1, device_id=slave_id
                             )
                             if not response.isError():
                                 result["modbus"] = True
@@ -201,7 +209,7 @@ class ModbusScanner:
         try:
             # Read model name first
             result = await client.read_holding_registers(
-                REG_MODEL_NAME, REG_MODEL_NAME_LEN, slave=slave_id
+                REG_MODEL_NAME, REG_MODEL_NAME_LEN, device_id=slave_id
             )
 
             if result.isError():
@@ -219,7 +227,7 @@ class ModbusScanner:
             # Try to read firmware
             try:
                 fw_result = await client.read_holding_registers(
-                    REG_FIRMWARE, REG_FIRMWARE_LEN, slave=slave_id
+                    REG_FIRMWARE, REG_FIRMWARE_LEN, device_id=slave_id
                 )
                 if not fw_result.isError():
                     device["firmware"] = self._decode_string(fw_result.registers)
@@ -229,7 +237,7 @@ class ModbusScanner:
             # Try to read serial number
             try:
                 sn_result = await client.read_holding_registers(
-                    REG_SERIAL_NUMBER, REG_SERIAL_NUMBER_LEN, slave=slave_id
+                    REG_SERIAL_NUMBER, REG_SERIAL_NUMBER_LEN, device_id=slave_id
                 )
                 if not sn_result.isError():
                     device["serial_number"] = self._decode_string(sn_result.registers)
@@ -240,19 +248,19 @@ class ModbusScanner:
             if device["type"] == DEVICE_TYPE_INVERTER:
                 try:
                     power_result = await client.read_holding_registers(
-                        REG_ACTIVE_POWER, 2, slave=slave_id
+                        REG_ACTIVE_POWER, 2, device_id=slave_id
                     )
                     if not power_result.isError():
                         device["active_power"] = self._decode_int32(power_result.registers)
 
                     voltage_result = await client.read_holding_registers(
-                        REG_GRID_VOLTAGE_A, 1, slave=slave_id
+                        REG_GRID_VOLTAGE_A, 1, device_id=slave_id
                     )
                     if not voltage_result.isError():
                         device["grid_voltage_a"] = voltage_result.registers[0] / 10.0
 
                     rated_result = await client.read_holding_registers(
-                        REG_RATED_POWER, 2, slave=slave_id
+                        REG_RATED_POWER, 2, device_id=slave_id
                     )
                     if not rated_result.isError():
                         device["rated_power"] = self._decode_uint32(rated_result.registers)
@@ -272,7 +280,7 @@ class ModbusScanner:
         """Read raw registers from a device."""
         try:
             async with AsyncModbusTcpClient(self.host, port=self.port, timeout=2) as client:
-                result = await client.read_holding_registers(register, count, slave=slave_id)
+                result = await client.read_holding_registers(register, count, device_id=slave_id)
 
                 if result.isError():
                     return {"error": str(result)}
