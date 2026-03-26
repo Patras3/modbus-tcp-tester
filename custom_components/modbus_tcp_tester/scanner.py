@@ -2,7 +2,8 @@
 import asyncio
 import logging
 import socket
-from typing import Any
+import struct
+from typing import Any, Callable
 
 from pymodbus.client import AsyncModbusTcpClient
 from pymodbus.exceptions import ModbusException
@@ -28,6 +29,7 @@ from .const import (
     REG_RATED_POWER,
     REG_SERIAL_NUMBER,
     REG_SERIAL_NUMBER_LEN,
+    REG_STATE,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -44,81 +46,68 @@ class ModbusScanner:
         self._scanning = False
         self._stop_requested = False
         self._devices: list[dict[str, Any]] = []
+        self._callbacks: list[Callable] = []
 
-    async def test_connection(self, host: str, port: int) -> dict[str, Any]:
-        """Test connection to Modbus TCP host (ping, port, modbus)."""
+    def register_callback(self, callback: Callable) -> None:
+        """Register a callback for scan events."""
+        self._callbacks.append(callback)
+
+    async def _notify_callbacks(self, event_type: str, data: dict[str, Any]) -> None:
+        """Notify all registered callbacks."""
+        for callback in self._callbacks:
+            try:
+                await callback(event_type, data)
+            except Exception as err:
+                _LOGGER.error("Callback error: %s", err)
+
+    async def test_connection(self, host: str | None = None, port: int | None = None) -> dict[str, Any]:
+        """Test connection to Modbus TCP host."""
+        test_host = host or self.host
+        test_port = port or self.port
+        
         result = {
-            "host": host,
-            "port": port,
+            "host": test_host,
+            "port": test_port,
             "ping": False,
             "port_open": False,
             "modbus": False,
         }
 
-        # Step 1: Test if host is reachable (socket connect = "ping")
-        _LOGGER.debug("Testing socket connection to %s:%d", host, port)
+        # Test socket connection
         try:
-            loop = asyncio.get_event_loop()
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.setblocking(False)
             sock.settimeout(2)
-            
-            # Try to connect
-            await asyncio.wait_for(
-                loop.sock_connect(sock, (host, port)),
-                timeout=3
-            )
+            connect_result = sock.connect_ex((test_host, test_port))
             sock.close()
-            result["ping"] = True
-            result["port_open"] = True
-            _LOGGER.debug("Socket connection successful")
-        except asyncio.TimeoutError:
-            _LOGGER.debug("Socket connection timeout")
-            result["ping"] = True  # Host exists but port timeout
-            result["port_open"] = False
-        except ConnectionRefusedError:
-            _LOGGER.debug("Connection refused - port closed")
-            result["ping"] = True  # Host exists but port refused
-            result["port_open"] = False
-        except OSError as e:
-            if "Network is unreachable" in str(e) or "No route to host" in str(e):
-                _LOGGER.debug("Host unreachable: %s", e)
-                result["ping"] = False
-            else:
-                _LOGGER.debug("Socket error: %s", e)
-                result["ping"] = True
-                result["port_open"] = False
-        except Exception as e:
-            _LOGGER.debug("Socket test error: %s", e)
-            result["ping"] = False
+            result["port_open"] = connect_result == 0
+            result["ping"] = connect_result == 0
+        except Exception as err:
+            _LOGGER.warning("Socket test failed: %s", err)
 
-        # Step 2: Test Modbus TCP connection (only if port is open)
+        # Test Modbus connection
         if result["port_open"]:
-            _LOGGER.debug("Testing Modbus TCP connection")
             try:
-                async with AsyncModbusTcpClient(host, port=port, timeout=2) as client:
+                async with AsyncModbusTcpClient(test_host, port=test_port, timeout=2) as client:
                     # Try to read from common slave IDs
-                    for slave_id in [1, 100, 0]:
+                    for slave_id in [1, 100]:
                         try:
                             response = await client.read_holding_registers(
                                 REG_MODEL_NAME, 1, slave=slave_id
                             )
                             if not response.isError():
                                 result["modbus"] = True
-                                _LOGGER.debug("Modbus response OK from slave %d", slave_id)
                                 break
-                        except Exception:
+                        except:
                             continue
-            except Exception as e:
-                _LOGGER.debug("Modbus test error: %s", e)
+            except Exception as err:
+                _LOGGER.warning("Modbus test failed: %s", err)
 
-        _LOGGER.info("Connection test result: %s", result)
         return result
 
     async def start_scan(
         self,
-        host: str,
-        port: int = 502,
+        host: str | None = None,
+        port: int | None = None,
         start_id: int = 1,
         end_id: int = 100,
     ) -> None:
@@ -127,8 +116,8 @@ class ModbusScanner:
             _LOGGER.warning("Scan already in progress")
             return
 
-        self.host = host
-        self.port = port
+        self.host = host or self.host
+        self.port = port or self.port
         self._scanning = True
         self._stop_requested = False
         self._devices = []
@@ -136,11 +125,16 @@ class ModbusScanner:
         # Fire scan started event
         self.hass.bus.async_fire(
             EVENT_SCAN_STARTED,
-            {"host": host, "port": port, "start_id": start_id, "end_id": end_id},
+            {"host": self.host, "port": self.port, "start_id": start_id, "end_id": end_id},
+        )
+
+        await self._notify_callbacks(
+            "scan_started",
+            {"host": self.host, "port": self.port, "range": f"{start_id}-{end_id}"},
         )
 
         try:
-            async with AsyncModbusTcpClient(host, port=port, timeout=1) as client:
+            async with AsyncModbusTcpClient(self.host, port=self.port, timeout=1) as client:
                 total = end_id - start_id + 1
                 current = 0
 
@@ -157,26 +151,42 @@ class ModbusScanner:
                         {"slave_id": slave_id, "progress": progress},
                     )
 
+                    await self._notify_callbacks(
+                        "scan_progress",
+                        {"slave_id": slave_id, "progress": progress},
+                    )
+
                     try:
                         device = await self._probe_device(client, slave_id)
                         if device:
                             self._devices.append(device)
+
+                            # Fire device found event
                             self.hass.bus.async_fire(EVENT_DEVICE_FOUND, device)
 
+                            await self._notify_callbacks("device_found", device)
+
                     except ModbusException:
-                        pass
+                        pass  # Silent fail for no response
                     except Exception as err:
                         _LOGGER.debug("Error probing slave %d: %s", slave_id, err)
 
-                    # Rate limiting
+                    # Rate limiting to avoid spamming
                     await asyncio.sleep(0.05)
 
         except Exception as err:
             _LOGGER.error("Scan error: %s", err)
         finally:
             self._scanning = False
+
+            # Fire scan completed event
             self.hass.bus.async_fire(
                 EVENT_SCAN_COMPLETED,
+                {"devices_found": len(self._devices), "devices": self._devices},
+            )
+
+            await self._notify_callbacks(
+                "scan_completed",
                 {"devices_found": len(self._devices), "devices": self._devices},
             )
 
@@ -189,6 +199,7 @@ class ModbusScanner:
     ) -> dict[str, Any] | None:
         """Probe a single Modbus slave ID."""
         try:
+            # Read model name first
             result = await client.read_holding_registers(
                 REG_MODEL_NAME, REG_MODEL_NAME_LEN, slave=slave_id
             )
@@ -198,6 +209,7 @@ class ModbusScanner:
 
             model = self._decode_string(result.registers)
 
+            # If we got a model, read more details
             device = {
                 "slave_id": slave_id,
                 "model": model,
@@ -244,6 +256,7 @@ class ModbusScanner:
                     )
                     if not rated_result.isError():
                         device["rated_power"] = self._decode_uint32(rated_result.registers)
+
                 except:
                     pass
 
@@ -288,12 +301,16 @@ class ModbusScanner:
     def _decode_string(registers: list[int]) -> str:
         """Decode Modbus registers to string."""
         try:
+            # Convert registers to bytes (big-endian)
             byte_list = []
             for reg in registers:
                 byte_list.append((reg >> 8) & 0xFF)
                 byte_list.append(reg & 0xFF)
+
+            # Decode as UTF-8 and strip nulls/spaces
             text = bytes(byte_list).decode("utf-8", errors="ignore")
             return text.strip().rstrip("\x00")
+
         except Exception:
             return "Unknown"
 
@@ -304,6 +321,7 @@ class ModbusScanner:
             high = registers[0]
             low = registers[1]
             value = (high << 16) | low
+            # Handle signed
             if value & 0x80000000:
                 value = -(0x100000000 - value)
             return value
@@ -324,6 +342,7 @@ class ModbusScanner:
     def _guess_device_type(model: str) -> str:
         """Guess device type from model name."""
         model_upper = model.upper()
+
         if "SUN2000" in model_upper:
             return DEVICE_TYPE_INVERTER
         elif "SDONGLE" in model_upper or "EMMA" in model_upper:
@@ -332,4 +351,5 @@ class ModbusScanner:
             return DEVICE_TYPE_BATTERY
         elif "DTSU" in model_upper or "DDSU" in model_upper:
             return DEVICE_TYPE_METER
+
         return DEVICE_TYPE_UNKNOWN

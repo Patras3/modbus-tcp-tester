@@ -10,7 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
-from .api import ModbusTesterWebSocketAPI
+from .api import async_register_websocket_api, set_scanner
 from .scanner import ModbusScanner
 
 _LOGGER = logging.getLogger(__name__)
@@ -50,11 +50,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "scanner": scanner,
     }
 
-    # Register WebSocket API
-    api = ModbusTesterWebSocketAPI(hass, scanner)
-    api.async_register()
+    # Set scanner for WebSocket API and register commands
+    set_scanner(scanner)
+    async_register_websocket_api(hass)
 
-    # Register services
+    # Register services (legacy, for compatibility)
     await _async_register_services(hass, scanner)
 
     # Register sidebar panel
@@ -87,7 +87,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_register_services(hass: HomeAssistant, scanner: ModbusScanner) -> None:
-    """Register services for Modbus TCP Tester."""
+    """Register services for Modbus TCP Tester (legacy REST API)."""
 
     async def handle_scan(call):
         """Handle scan service."""
@@ -111,35 +111,9 @@ async def _async_register_services(hass: HomeAssistant, scanner: ModbusScanner) 
         """Handle stop scan service."""
         scanner.stop_scan()
 
-    async def handle_read_registers(call):
-        """Handle read registers service."""
-        host = call.data.get("host")
-        port = call.data.get("port", 502)
-        slave_id = call.data.get("slave_id", 1)
-        register = call.data.get("register", 30000)
-        count = call.data.get("count", 10)
-        
-        if not host:
-            _LOGGER.error("Read registers service requires 'host' parameter")
-            return
-        
-        scanner.host = host
-        scanner.port = port
-        
-        result = await scanner.read_registers(
-            slave_id=slave_id,
-            register=register,
-            count=count,
-        )
-        
-        _LOGGER.info("Read registers result: %s", result)
-
     # Register services only once
     if not hass.services.has_service(DOMAIN, "scan"):
         hass.services.async_register(DOMAIN, "scan", handle_scan)
     
     if not hass.services.has_service(DOMAIN, "stop_scan"):
         hass.services.async_register(DOMAIN, "stop_scan", handle_stop_scan)
-    
-    if not hass.services.has_service(DOMAIN, "read_registers"):
-        hass.services.async_register(DOMAIN, "read_registers", handle_read_registers)

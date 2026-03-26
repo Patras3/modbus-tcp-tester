@@ -3,6 +3,7 @@
 let scanning = false;
 let devices = [];
 let ws = null;
+let wsMessageId = 10;
 
 // Load saved config from localStorage
 function loadConfig() {
@@ -48,31 +49,24 @@ function getToken() {
     return null;
 }
 
-// Call HA WebSocket API
-async function callWS(type, data = {}) {
+// Send WebSocket command and wait for response
+function sendWsCommand(type, data = {}) {
     return new Promise((resolve, reject) => {
-        const token = getToken();
-        if (!token) {
-            reject(new Error('Brak tokenu autoryzacji'));
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            reject(new Error('WebSocket not connected'));
             return;
         }
         
-        const tempWs = new WebSocket(`ws://${location.host}/api/websocket`);
-        let msgId = 1;
+        const id = ++wsMessageId;
+        const timeout = setTimeout(() => {
+            reject(new Error('WebSocket timeout'));
+        }, 10000);
         
-        tempWs.onopen = () => {
-            tempWs.send(JSON.stringify({ type: 'auth', access_token: token }));
-        };
-        
-        tempWs.onmessage = (event) => {
+        const handler = (event) => {
             const msg = JSON.parse(event.data);
-            
-            if (msg.type === 'auth_ok') {
-                tempWs.send(JSON.stringify({ id: msgId, type, ...data }));
-            }
-            
-            if (msg.id === msgId) {
-                tempWs.close();
+            if (msg.id === id) {
+                clearTimeout(timeout);
+                ws.removeEventListener('message', handler);
                 if (msg.success === false) {
                     reject(new Error(msg.error?.message || 'Unknown error'));
                 } else {
@@ -81,49 +75,61 @@ async function callWS(type, data = {}) {
             }
         };
         
-        tempWs.onerror = (err) => {
+        ws.addEventListener('message', handler);
+        ws.send(JSON.stringify({ id, type, ...data }));
+    });
+}
+
+// Connect to HA WebSocket
+function connectWebSocket() {
+    return new Promise((resolve, reject) => {
+        const token = getToken();
+        if (!token) {
+            reject(new Error('Brak tokenu autoryzacji'));
+            return;
+        }
+        
+        ws = new WebSocket(`ws://${location.host}/api/websocket`);
+        
+        ws.onopen = () => {
+            ws.send(JSON.stringify({ type: 'auth', access_token: token }));
+        };
+        
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            
+            if (data.type === 'auth_ok') {
+                addLog('✅ WebSocket połączony', 'success');
+                // Subscribe to events
+                ws.send(JSON.stringify({ id: 1, type: 'subscribe_events', event_type: 'modbus_tcp_tester_scan_started' }));
+                ws.send(JSON.stringify({ id: 2, type: 'subscribe_events', event_type: 'modbus_tcp_tester_scan_progress' }));
+                ws.send(JSON.stringify({ id: 3, type: 'subscribe_events', event_type: 'modbus_tcp_tester_device_found' }));
+                ws.send(JSON.stringify({ id: 4, type: 'subscribe_events', event_type: 'modbus_tcp_tester_scan_completed' }));
+                resolve();
+            }
+            
+            if (data.type === 'auth_invalid') {
+                reject(new Error('Nieprawidłowy token'));
+            }
+            
+            if (data.type === 'event') {
+                handleEvent(data.event);
+            }
+        };
+        
+        ws.onerror = (err) => {
+            console.error('WebSocket error:', err);
             reject(err);
+        };
+        
+        ws.onclose = () => {
+            addLog('⚠️ WebSocket rozłączony', 'warning');
+            ws = null;
         };
     });
 }
 
-// Subscribe to HA events
-function subscribeEvents() {
-    const token = getToken();
-    if (!token) {
-        addLog('⚠️ Brak tokenu autoryzacji - eventy nie będą działać', 'warning');
-        return;
-    }
-    
-    ws = new WebSocket(`ws://${location.host}/api/websocket`);
-    let authenticated = false;
-    
-    ws.onopen = () => {
-        ws.send(JSON.stringify({ type: 'auth', access_token: token }));
-    };
-    
-    ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        
-        if (data.type === 'auth_ok' && !authenticated) {
-            authenticated = true;
-            ws.send(JSON.stringify({ id: 1, type: 'subscribe_events', event_type: 'modbus_tcp_tester_scan_started' }));
-            ws.send(JSON.stringify({ id: 2, type: 'subscribe_events', event_type: 'modbus_tcp_tester_scan_progress' }));
-            ws.send(JSON.stringify({ id: 3, type: 'subscribe_events', event_type: 'modbus_tcp_tester_device_found' }));
-            ws.send(JSON.stringify({ id: 4, type: 'subscribe_events', event_type: 'modbus_tcp_tester_scan_completed' }));
-            ws.send(JSON.stringify({ id: 5, type: 'subscribe_events', event_type: 'modbus_tcp_tester_connection_test' }));
-        }
-        
-        if (data.type === 'event') {
-            handleEvent(data.event);
-        }
-    };
-    
-    ws.onerror = (err) => console.error('WebSocket error:', err);
-    ws.onclose = () => { ws = null; };
-}
-
-// Handle HA events
+// Handle HA events (live scan updates)
 function handleEvent(event) {
     const type = event.event_type;
     const data = event.data;
@@ -133,7 +139,10 @@ function handleEvent(event) {
             addLog('🚀 Skanowanie rozpoczęte', 'success');
             break;
         case 'modbus_tcp_tester_scan_progress':
-            addLog(`⏳ Sprawdzam Slave ${data.slave_id}... (${data.progress}%)`);
+            // Update progress less frequently
+            if (data.progress % 10 === 0 || data.progress === 100) {
+                addLog(`⏳ Postęp: ${data.progress}% (Slave ${data.slave_id})`);
+            }
             break;
         case 'modbus_tcp_tester_device_found':
             addLog(`✅ Znaleziono ${data.type}: ${data.model} (Slave ${data.slave_id})`, 'success');
@@ -143,21 +152,10 @@ function handleEvent(event) {
             addLog(`✨ Skanowanie zakończone! Znaleziono ${data.devices_found} urządzeń`, 'success');
             setScanningState(false);
             break;
-        case 'modbus_tcp_tester_connection_test':
-            if (data.ping !== undefined) {
-                addLog(data.ping ? '✅ Ping: OK' : '❌ Ping: FAILED', data.ping ? 'success' : 'error');
-            }
-            if (data.port_open !== undefined) {
-                addLog(data.port_open ? `✅ Port ${data.port}: OTWARTY` : `❌ Port ${data.port}: ZAMKNIĘTY`, data.port_open ? 'success' : 'error');
-            }
-            if (data.modbus !== undefined) {
-                addLog(data.modbus ? '✅ Modbus TCP: ODPOWIADA' : '❌ Modbus TCP: BRAK ODPOWIEDZI', data.modbus ? 'success' : 'error');
-            }
-            break;
     }
 }
 
-// Test Connection (real test - ping, port, modbus)
+// Test Connection (real test via WebSocket)
 async function testConnection() {
     const config = saveConfig();
     
@@ -169,7 +167,7 @@ async function testConnection() {
     addLog(`🔌 Testuję połączenie z ${config.host}:${config.port}...`);
     
     try {
-        const result = await callWS('modbus_tcp_tester/test_connection', {
+        const result = await sendWsCommand('modbus_tcp_tester/test_connection', {
             host: config.host,
             port: config.port
         });
@@ -179,15 +177,18 @@ async function testConnection() {
         addLog(result.port_open ? `✅ Port ${config.port}: OTWARTY` : `❌ Port ${config.port}: ZAMKNIĘTY`, result.port_open ? 'success' : 'error');
         
         if (result.port_open) {
-            addLog(result.modbus ? '✅ Modbus TCP: ODPOWIADA' : '❌ Modbus TCP: BRAK ODPOWIEDZI', result.modbus ? 'success' : 'error');
+            addLog(result.modbus ? '✅ Modbus TCP: ODPOWIADA' : '⚠️ Modbus TCP: Brak odpowiedzi', result.modbus ? 'success' : 'warning');
         }
         
         // Summary
         if (result.ping && result.port_open && result.modbus) {
             addLog('🎉 Połączenie działa poprawnie!', 'success');
             return true;
+        } else if (result.port_open) {
+            addLog('⚠️ Port otwarty, ale Modbus nie odpowiada', 'warning');
+            return true; // Can still try scanning
         } else {
-            addLog('⚠️ Połączenie ma problemy - sprawdź powyższe błędy', 'warning');
+            addLog('❌ Połączenie nie działa', 'error');
             return false;
         }
     } catch (err) {
@@ -212,40 +213,20 @@ async function startScan() {
     addLog(`📊 Zakres: Slave ${config.start_id} - ${config.end_id}`);
     
     // First test connection
-    addLog('🔌 Sprawdzam połączenie...', 'warning');
+    addLog('🔌 Sprawdzam połączenie...');
+    const connectionOk = await testConnection();
     
-    try {
-        const testResult = await callWS('modbus_tcp_tester/test_connection', {
-            host: config.host,
-            port: config.port
-        });
-        
-        // Show test results
-        addLog(testResult.ping ? '✅ Ping: OK' : '❌ Ping: FAILED', testResult.ping ? 'success' : 'error');
-        addLog(testResult.port_open ? `✅ Port ${config.port}: OTWARTY` : `❌ Port ${config.port}: ZAMKNIĘTY`, testResult.port_open ? 'success' : 'error');
-        
-        if (!testResult.port_open) {
-            addLog('❌ Port zamknięty - skanowanie przerwane!', 'error');
-            return;
-        }
-        
-        addLog(testResult.modbus ? '✅ Modbus TCP: ODPOWIADA' : '⚠️ Modbus TCP: Brak odpowiedzi (może działać)', testResult.modbus ? 'success' : 'warning');
-        
-        if (!testResult.modbus) {
-            addLog('⚠️ Modbus nie odpowiada na test, ale próbuję skanować...', 'warning');
-        }
-        
-    } catch (err) {
-        addLog(`❌ Błąd testu połączenia: ${err.message}`, 'error');
-        addLog('⚠️ Próbuję skanować mimo błędu testu...', 'warning');
+    if (!connectionOk) {
+        addLog('❌ Połączenie nie działa - skanowanie przerwane!', 'error');
+        return;
     }
     
     // Start actual scan
     setScanningState(true);
-    addLog('🚀 Rozpoczynam skanowanie Slave ID...', 'success');
+    addLog('🚀 Rozpoczynam skanowanie Slave ID...');
     
     try {
-        await callWS('modbus_tcp_tester/start_scan', {
+        await sendWsCommand('modbus_tcp_tester/start_scan', {
             host: config.host,
             port: config.port,
             start_id: config.start_id,
@@ -260,7 +241,7 @@ async function startScan() {
 // Stop scan
 async function stopScan() {
     try {
-        await callWS('modbus_tcp_tester/stop_scan', {});
+        await sendWsCommand('modbus_tcp_tester/stop_scan', {});
         addLog('🛑 Skanowanie zatrzymane', 'warning');
         setScanningState(false);
     } catch (err) {
@@ -329,10 +310,10 @@ function updateDevicesList() {
                         <span class="device-detail-label">Firmware:</span>
                         <span class="device-detail-value">${device.firmware}</span>
                     </div>` : ''}
-                    ${device.active_power !== undefined ? `
+                    ${device.serial_number ? `
                     <div class="device-detail">
-                        <span class="device-detail-label">Moc:</span>
-                        <span class="device-detail-value">${device.active_power} W</span>
+                        <span class="device-detail-label">S/N:</span>
+                        <span class="device-detail-value">${device.serial_number}</span>
                     </div>` : ''}
                 </div>
             </div>
@@ -375,8 +356,13 @@ function clearLogs() {
 }
 
 // Initialize
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     loadConfig();
-    subscribeEvents();
-    addLog('🔧 Panel Modbus TCP Tester załadowany', 'success');
+    addLog('🔧 Panel Modbus TCP Tester ładowanie...');
+    
+    try {
+        await connectWebSocket();
+    } catch (err) {
+        addLog(`❌ Błąd połączenia WebSocket: ${err.message}`, 'error');
+    }
 });
