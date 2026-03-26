@@ -1,13 +1,11 @@
 """Modbus TCP Tester integration for Home Assistant."""
 import logging
 import os
-from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
-from homeassistant.components.frontend import add_extra_js_url
 
 from .api import ModbusTesterWebSocketAPI
 from .const import DOMAIN
@@ -28,7 +26,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Modbus TCP Tester from a config entry."""
     _LOGGER.info("Setting up Modbus TCP Tester")
     
-    # Create a global scanner instance (no specific host yet - frontend will provide)
+    # Create a global scanner instance
     scanner = ModbusScanner(hass=hass, host="", port=502)
     
     hass.data[DOMAIN][entry.entry_id] = {
@@ -42,38 +40,44 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register services
     await async_register_services(hass, scanner)
     
-    # Add JS to frontend
-    panel_js_path = hass.config.path("www/modbus-tester-panel.js")
-    if os.path.exists(panel_js_path):
-        add_extra_js_url(hass, "/local/modbus-tester-panel.js")
-    else:
-        _LOGGER.warning(
-            "Panel JS not found at %s - please copy www/modbus-tester-panel.js to www/ folder",
-            panel_js_path
-        )
-    
-    # Register sidebar panel
-    hass.components.frontend.async_register_built_in_panel(
-        component_name="custom",
-        sidebar_title="Modbus Tester",
-        sidebar_icon="mdi:radar",
-        frontend_url_path="modbus-tester",
-        config={
-            "_panel_custom": {
-                "name": "modbus-tester-panel",
+    # Register frontend panel
+    await hass.http.async_register_static_paths(
+        [
+            {
+                "url": "/modbus_tcp_tester_panel",
+                "path": hass.config.path("www/modbus-tester-panel.js"),
             }
-        },
-        require_admin=False,
+        ]
     )
     
-    _LOGGER.info("Modbus TCP Tester setup complete - panel added to sidebar")
+    # Add panel to sidebar
+    hass.data.setdefault("frontend_panels", {})
+    hass.data["frontend_panels"]["modbus-tester"] = {
+        "component_name": "custom",
+        "sidebar_title": "Modbus Tester",
+        "sidebar_icon": "mdi:radar",
+        "url_path": "modbus-tester",
+        "require_admin": False,
+        "config": {
+            "_panel_custom": {
+                "name": "modbus-tester-panel",
+                "js_url": "/modbus_tcp_tester_panel",
+            }
+        },
+    }
+    
+    _LOGGER.info("Modbus TCP Tester setup complete - panel registered")
     
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    hass.data[DOMAIN].pop(entry.entry_id)
+    hass.data[DOMAIN].pop(entry.entry_id, None)
+    
+    # Remove panel
+    hass.data.get("frontend_panels", {}).pop("modbus-tester", None)
+    
     return True
 
 
@@ -114,7 +118,6 @@ async def async_register_services(hass: HomeAssistant, scanner: ModbusScanner) -
             _LOGGER.error("Read registers service requires 'host' parameter")
             return
         
-        # Temporarily set scanner host/port
         scanner.host = host
         scanner.port = port
         
@@ -126,7 +129,7 @@ async def async_register_services(hass: HomeAssistant, scanner: ModbusScanner) -
         
         _LOGGER.info("Read registers result: %s", result)
     
-    # Register services only once (use has_service check)
+    # Register services only once
     if not hass.services.has_service(DOMAIN, "scan"):
         hass.services.async_register(DOMAIN, "scan", handle_scan)
     
