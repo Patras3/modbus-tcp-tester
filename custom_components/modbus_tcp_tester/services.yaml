@@ -5,7 +5,7 @@ scan:
     host:
       name: Host
       description: IP address or hostname
-      required: false
+      required: true
       example: "192.168.2.5"
       selector:
         text:
@@ -48,6 +48,23 @@ read_registers:
   name: Read registers
   description: Read raw Modbus registers from a device
   fields:
+    host:
+      name: Host
+      description: IP address or hostname
+      required: true
+      example: "192.168.2.5"
+      selector:
+        text:
+    port:
+      name: Port
+      description: Modbus TCP port
+      required: false
+      default: 502
+      example: 502
+      selector:
+        number:
+          min: 1
+          max: 65535
     slave_id:
       name: Slave ID
       description: Modbus slave ID

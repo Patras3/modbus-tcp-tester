@@ -1,161 +1,175 @@
 # 🚀 Quick Start Guide
 
-## Dla Ciebie (testowanie lokalne)
+## Instalacja
 
-### 1. Instalacja w HA
+### Przez HACS (zalecane)
+
+1. **HACS → Integrations → Custom repositories**
+2. URL: `https://github.com/Patras3/modbus-tcp-tester`
+3. Category: **Integration**
+4. **Install**
+5. **Restart Home Assistant**
+6. **GOTOWE!** Panel pojawi się w sidebarze
+
+### Ręcznie
 
 ```bash
-# Kopiuj folder do HA
-scp -r modbus-tcp-tester/custom_components/modbus_tcp_tester root@HA_IP:/config/custom_components/
+# Kopiuj integrację
+scp -r custom_components/modbus_tcp_tester root@HA_IP:/config/custom_components/
 
-# Restart HA
+# Kopiuj panel JS
+scp www/modbus-tester-panel.js root@HA_IP:/config/www/
+
+# Restart
 ssh root@HA_IP "ha core restart"
 ```
 
-### 2. Konfiguracja
+---
 
-1. Settings → Devices & Services → Add Integration
-2. Wyszukaj: **Modbus TCP Tester**
-3. Podaj:
-   - IP: `192.168.2.5` (Twój dongle/inverter)
-   - Port: `502`
-   - Range: `1` - `100`
-4. Submit
+## Pierwsze uruchomienie
 
-### 3. Dodaj kartę Lovelace
+### 1. Otwórz panel
 
-**Opcja A: Przez UI**
+W **sidebarze** HA zobaczysz nową pozycję: **🔍 Modbus Tester**
 
-1. Dashboard → Edit
-2. Add Card → Manual card
-3. Wklej:
+Kliknij!
 
-```yaml
-type: custom:modbus-tester-card
-host: 192.168.2.5
-port: 502
-start_id: 1
-end_id: 100
-title: 🔍 Mój Scanner
+### 2. Skonfiguruj
+
+Zobaczysz formularz **Konfiguracja**:
+
+```
+IP Address:     192.168.2.5       [Wpisz IP dongle/invertera]
+Port:           502                [Lub 6607 dla nowszych FW]
+Start Slave ID: 1
+End Slave ID:   100
 ```
 
-**Opcja B: resources (lepsze dla HACS)**
+### 3. Test połączenia (opcjonalnie)
 
-W `configuration.yaml`:
+Kliknij **🔌 Test Connection**
 
-```yaml
-lovelace:
-  mode: yaml
-  resources:
-    - url: /local/modbus-tester-card.js
-      type: module
+Zobaczysz:
+```
+[23:10:45] 🔌 Testing connection to 192.168.2.5:502...
+[23:10:46] ✅ Ping: OK
+[23:10:46] ✅ Port 502: OPEN
+[23:10:47] ✅ Modbus TCP: WORKING
 ```
 
-Kopiuj JS:
+### 4. Skanuj!
 
-```bash
-scp www/modbus-tester-card.js root@HA_IP:/config/www/
+Kliknij **🔍 Scan Now**
+
+Obserwuj logi:
+```
+[23:10:50] 🔍 Starting scan of 192.168.2.5:502
+[23:10:50] 📊 Range: Slave 1 - 100
+[23:10:51] ⏳ Testing Slave 1... (1%)
+[23:10:52] ✅ Found inverter: SUN2000-10KTL-M1 (Slave 1)
+[23:10:53] ⏳ Testing Slave 100... (100%)
+[23:10:54] ✅ Found dongle: SDongleA-05 (Slave 100)
+[23:10:55] ✨ Scan completed! Found 2 device(s)
 ```
 
-### 4. Test!
+### 5. Zobacz urządzenia
 
-1. Otwórz dashboard
-2. Kliknij **Scan Now**
-3. Obserwuj logi
-4. Sprawdź znalezione urządzenia
+Sekcja **Discovered Devices** pokaże:
 
----
+```
+☀️ Slave 1: SUN2000-10KTL-M1
+   Type: inverter
+   Firmware: V200R001C00SPC172
+   Power: 5234 W
+   Voltage A: 235.2 V
+   [📖 Read More]
 
-## Dla Sąsiada (instalacja przez HACS)
-
-### Przygotowanie (jednorazowe)
-
-1. Stwórz repo na GitHub: `Patras3/modbus-tcp-tester`
-2. Push kod:
-
-```bash
-cd modbus-tcp-tester
-git init
-git add .
-git commit -m "Initial commit"
-git remote add origin https://github.com/Patras3/modbus-tcp-tester.git
-git push -u origin main
+📡 Slave 100: SDongleA-05
+   Type: dongle
+   Firmware: V200R022C10SPC300
+   [📖 Read More]
 ```
 
-### Instalacja u sąsiada
+---
 
-1. HACS → Integrations → ⋮ (trzy kropki) → Custom repositories
-2. URL: `https://github.com/Patras3/modbus-tcp-tester`
-3. Category: **Integration**
-4. Add
-5. Search: **Modbus TCP Tester**
-6. Install
-7. Restart HA
+## Tipsy
 
-### Konfiguracja u sąsiada
+### Szybkie skanowanie
 
-1. Settings → Devices & Services → Add Integration → Modbus TCP Tester
-2. IP: (jego dongle/inverter IP)
-3. Port: 502
-4. Done!
+**Dla inverterów/liczników:**
+```
+Start: 1
+End: 10
+```
 
-### Użycie (proste!)
+**Dla dongle:**
+```
+Start: 90
+End: 110
+```
 
-1. Dashboard → dodaj kartę (jak wyżej)
-2. Kliknij **Scan Now**
-3. Gotowe! Zobacz urządzenia
+### Zapisywanie ustawień
+
+Twoje ustawienia (IP, port, zakres) są **automatycznie zapisywane** w localStorage przeglądarki. Przy kolejnym otwarciu będą przywrócone!
+
+### Różne porty
+
+- **502** — standard Modbus TCP (starsze firmware)
+- **6607** — nowsze firmware Huawei (≥ SPC124, grudzień 2021+)
+
+Jeśli nie działa na 502, spróbuj 6607!
 
 ---
 
-## Troubleshooting dla sąsiada
+## Dla sąsiada (instalacja krok po kroku)
 
-### "Cannot connect"
+### 1. HACS
 
-1. Sprawdź IP (ping z terminala HA)
-2. Sprawdź czy Modbus TCP włączony w urządzeniu
-3. Spróbuj portu 6607 (nowsze firmware)
+1. Otwórz **HACS** w Home Assistant
+2. Kliknij **Integrations**
+3. Kliknij **⋮** (trzy kropki) w prawym górnym rogu
+4. Wybierz **Custom repositories**
+5. Wklej: `https://github.com/Patras3/modbus-tcp-tester`
+6. Category: **Integration**
+7. Kliknij **Add**
+8. Znajdź **Modbus TCP Tester** na liście
+9. Kliknij **Install**
+10. **Restart Home Assistant**
 
-### "No devices found"
+### 2. Panel
 
-1. Kliknij **Test Connection** najpierw
-2. Jeśli port open ale Modbus fail → sprawdź slave ID ręcznie (spróbuj 1, 100)
-3. Zmień zakres: najpierw 1-10, potem rozszerzaj
+Po restarcie:
+1. Sidebar → **🔍 Modbus Tester** (nowa pozycja!)
+2. Wpisz IP dongle (np. `192.168.2.5`)
+3. Port: `502`
+4. Kliknij **Scan Now**
 
-### "Scan too slow"
+### 3. Gotowe!
 
-- To normalne! Rate limiting = 0.05s per slave ID
-- 100 slave ID = ~5 sekund
-- Dla szybszego: zmniejsz zakres (np. 1-20)
-
----
-
-## Tips
-
-**Dla Ciebie:**
-- Testuj na własnym setupie najpierw
-- Sprawdź czy wykrywa wszystkie urządzenia (inverter, dongle, meter, battery)
-- Zbierz logi jeśli coś nie działa
-
-**Dla sąsiada:**
-- Podaj konkretny zakres slave ID (np. "spróbuj 1-10")
-- Pokaż screeny z wykrytych urządzeń jako przykład
-- Przygotuj FAQ z typowymi błędami
+Jeśli znalazło urządzenia → **działa!** 🎉
 
 ---
 
-## Next Steps
+## Troubleshooting
 
-**Po testach:**
-1. Zgłoś bugi jeśli znajdziesz
-2. Dodaj więcej rejestrów Modbus (jeśli potrzeba)
-3. Opcjonalnie: dodaj auto-discovery dla HA (żeby urządzenia się same pojawiły)
-4. Opcjonalnie: eksport do CSV/JSON
+### Panel nie widać
 
-**Community:**
-- Opublikuj na Home Assistant Community Forum
-- Share na reddit.com/r/homeassistant
-- Dodaj do Awesome Home Assistant list
+1. Hard refresh: **Ctrl+Shift+R** (Windows/Linux) lub **Cmd+Shift+R** (Mac)
+2. Wyczyść cache przeglądarki
+3. Sprawdź logi: Settings → System → Logs → filtruj `modbus_tcp_tester`
+
+### Connection Failed
+
+1. Użyj **Test Connection** żeby zdiagnozować
+2. Sprawdź czy Modbus TCP włączony w urządzeniu (Settings → Communication)
+3. Spróbuj portu 6607 (jeśli 502 nie działa)
+
+### No Devices Found
+
+1. Zmniejsz zakres: najpierw 1-10
+2. Jeśli dalej nic: spróbuj 90-110 (dongle)
+3. Sprawdź slave ID w dokumentacji urządzenia
 
 ---
 
-**Pytania? Issues na GitHub!**
+**Pytania? → GitHub Issues:** https://github.com/Patras3/modbus-tcp-tester/issues

@@ -1,12 +1,12 @@
 """Modbus TCP Tester integration for Home Assistant."""
 import logging
+import os
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
+from homeassistant.components.frontend import add_extra_js_url
 
 from .api import ModbusTesterWebSocketAPI
 from .const import DOMAIN
@@ -14,32 +14,19 @@ from .scanner import ModbusScanner
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SENSOR]
-
-CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+CONFIG_SCHEMA = cv.empty_config_schema(DOMAIN)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up Modbus TCP Tester component."""
+    _LOGGER.info("Setting up Modbus TCP Tester (singleton mode)")
+    
     hass.data.setdefault(DOMAIN, {})
-    return True
-
-
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Modbus TCP Tester from a config entry."""
-    _LOGGER.info("Setting up Modbus TCP Tester for %s", entry.data["host"])
     
-    # Create scanner instance
-    scanner = ModbusScanner(
-        hass=hass,
-        host=entry.data["host"],
-        port=entry.data.get("port", 502),
-    )
+    # Create a global scanner instance (no specific host yet - frontend will provide)
+    scanner = ModbusScanner(hass=hass, host="", port=502)
     
-    # Store scanner in hass.data
-    hass.data[DOMAIN][entry.entry_id] = {
-        "scanner": scanner,
-    }
+    hass.data[DOMAIN]["scanner"] = scanner
     
     # Register WebSocket API
     api = ModbusTesterWebSocketAPI(hass, scanner)
@@ -48,20 +35,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register services
     await async_register_services(hass, scanner)
     
-    # Set up platforms
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # Add JS to frontend
+    await hass.http.async_register_static_paths([{
+        "url": "/modbus-tester-panel.js",
+        "path": os.path.join(os.path.dirname(__file__), "../../www/modbus-tester-panel.js"),
+    }])
+    
+    add_extra_js_url(hass, "/modbus-tester-panel.js")
+    
+    # Register sidebar panel
+    hass.components.frontend.async_register_built_in_panel(
+        component_name="custom",
+        sidebar_title="Modbus Tester",
+        sidebar_icon="mdi:radar",
+        frontend_url_path="modbus-tester",
+        config={
+            "_panel_custom": {
+                "name": "modbus-tester-panel",
+            }
+        },
+        require_admin=False,
+    )
+    
+    _LOGGER.info("Modbus TCP Tester setup complete - panel added to sidebar")
     
     return True
-
-
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    
-    if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id)
-    
-    return unload_ok
 
 
 async def async_register_services(hass: HomeAssistant, scanner: ModbusScanner) -> None:
@@ -69,10 +67,14 @@ async def async_register_services(hass: HomeAssistant, scanner: ModbusScanner) -
     
     async def handle_scan(call):
         """Handle scan service call."""
-        host = call.data.get("host", scanner.host)
-        port = call.data.get("port", scanner.port)
+        host = call.data.get("host")
+        port = call.data.get("port", 502)
         start_id = call.data.get("start_id", 1)
         end_id = call.data.get("end_id", 100)
+        
+        if not host:
+            _LOGGER.error("Scan service requires 'host' parameter")
+            return
         
         await scanner.start_scan(
             host=host,
@@ -87,9 +89,19 @@ async def async_register_services(hass: HomeAssistant, scanner: ModbusScanner) -
     
     async def handle_read_registers(call):
         """Handle read registers service call."""
+        host = call.data.get("host")
+        port = call.data.get("port", 502)
         slave_id = call.data.get("slave_id", 1)
         register = call.data.get("register", 30000)
         count = call.data.get("count", 10)
+        
+        if not host:
+            _LOGGER.error("Read registers service requires 'host' parameter")
+            return
+        
+        # Temporarily set scanner host/port
+        scanner.host = host
+        scanner.port = port
         
         result = await scanner.read_registers(
             slave_id=slave_id,
