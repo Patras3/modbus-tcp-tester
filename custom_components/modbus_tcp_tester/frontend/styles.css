@@ -292,6 +292,52 @@ body {
     font-weight: 500;
 }
 
+/* Loops History */
+.loops-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+}
+
+.loop-entry {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 6px;
+    border-left: 3px solid var(--border-color);
+}
+
+.loop-entry.success {
+    border-left-color: var(--success-color);
+}
+
+.loop-entry.warning {
+    border-left-color: var(--warning-color);
+}
+
+.loop-entry.error {
+    border-left-color: var(--error-color);
+}
+
+.loop-num {
+    font-weight: 600;
+    color: var(--primary-color);
+    min-width: 30px;
+}
+
+.loop-status {
+    flex: 1;
+}
+
+.loop-time {
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
 /* Logs */
 .logs-container {
     max-height: 400px;

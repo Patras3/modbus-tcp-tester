@@ -6,6 +6,7 @@ let ws = null;
 let wsMessageId = 10;
 let loopEndTime = null;  // When loop should stop
 let loopIteration = 0;   // Current loop iteration
+let loopHistory = [];    // History of loop iterations
 
 // Load saved config from localStorage
 function loadConfig() {
@@ -161,6 +162,12 @@ function handleEvent(event) {
             addLog(`✨ Iteracja #${loopIteration} zakończona! Znaleziono ${data.devices_found} urządzeń`, 'success');
             setScanningState(false);
             
+            // Add loop history entry
+            if (loopEndTime && window._currentLoopConnResult) {
+                const conn = window._currentLoopConnResult;
+                addLoopEntry(loopIteration, conn.ping, conn.port, conn.modbus, data.devices_found);
+            }
+            
             // Check loop mode with time
             if (loopEndTime && Date.now() < loopEndTime) {
                 const remainingMs = loopEndTime - Date.now();
@@ -211,18 +218,19 @@ async function testConnection() {
                            (result.port_open ? 'warning' : 'error');
         addLog(`📡 Status: Ping ${pingIcon} | Port ${portIcon} | Modbus ${modbusIcon}`, statusClass);
         
+        // Return full result for loop history
         if (result.ping && result.port_open && result.modbus) {
-            return true;
+            return { ok: true, ping: true, port: true, modbus: true };
         } else if (result.port_open) {
             addLog('⚠️ Port otwarty, ale Modbus nie odpowiada - próbuję skanować...', 'warning');
-            return true; // Can still try scanning
+            return { ok: true, ping: result.ping, port: true, modbus: false };
         } else {
             addLog('❌ Połączenie nie działa!', 'error');
-            return false;
+            return { ok: false, ping: result.ping, port: false, modbus: false };
         }
     } catch (err) {
         addLog(`❌ Błąd testu: ${err.message}`, 'error');
-        return false;
+        return { ok: false, ping: false, port: false, modbus: false };
     }
 }
 
@@ -238,10 +246,12 @@ async function startScan(isLoopContinuation = false) {
     // Get loop minutes
     const loopMinutes = parseInt(document.getElementById('loop-minutes')?.value) || 0;
     
-    // First scan in loop - set end time and clear devices
+    // First scan in loop - set end time and clear devices/history
     if (!isLoopContinuation) {
         devices = [];
+        loopHistory = [];
         updateDevicesList();
+        updateLoopsList();
         loopIteration = 0;
         
         if (loopMinutes > 0) {
@@ -256,11 +266,17 @@ async function startScan(isLoopContinuation = false) {
     loopIteration++;
     addLog(`🔍 Iteracja #${loopIteration}: ${config.host}:${config.port} (Slave ${config.start_id}-${config.end_id})`);
     
-    // Test connection (logs status automatically)
-    const connectionOk = await testConnection();
+    // Test connection (logs status automatically, returns {ok, ping, port, modbus})
+    const connResult = await testConnection();
     
-    if (!connectionOk) {
-        addLog('❌ Połączenie nie działa!', 'error');
+    // Store connection result for loop history (will be completed after scan)
+    window._currentLoopConnResult = connResult;
+    
+    if (!connResult.ok) {
+        // Add loop entry for failed connection
+        if (loopEndTime) {
+            addLoopEntry(loopIteration, connResult.ping, connResult.port, connResult.modbus, 0);
+        }
         
         // In loop mode - don't stop, just log and continue to next iteration
         if (loopEndTime && Date.now() < loopEndTime) {
@@ -404,6 +420,56 @@ function getDeviceIcon(type) {
         unknown: '❓'
     };
     return icons[type] || icons.unknown;
+}
+
+// Add loop history entry
+function addLoopEntry(iteration, pingOk, portOk, modbusOk, devicesFound) {
+    const now = new Date();
+    const time = now.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    
+    const entry = {
+        iteration,
+        ping: pingOk,
+        port: portOk,
+        modbus: modbusOk,
+        devices: devicesFound,
+        time,
+        status: (pingOk && portOk && modbusOk) ? 'success' : (portOk ? 'warning' : 'error')
+    };
+    
+    loopHistory.push(entry);
+    updateLoopsList();
+}
+
+// Update loops list UI
+function updateLoopsList() {
+    const container = document.getElementById('loops-list');
+    const card = document.getElementById('loops-card');
+    const count = document.getElementById('loops-count');
+    
+    count.textContent = loopHistory.length;
+    
+    if (loopHistory.length === 0) {
+        card.style.display = 'none';
+        return;
+    }
+    
+    card.style.display = 'block';
+    
+    // Show newest first
+    container.innerHTML = loopHistory.slice().reverse().map(entry => {
+        const pingIcon = entry.ping ? '✅' : '❌';
+        const portIcon = entry.port ? '✅' : '❌';
+        const modbusIcon = entry.modbus ? '✅' : (entry.port ? '⚠️' : '❌');
+        
+        return `
+            <div class="loop-entry ${entry.status}">
+                <span class="loop-num">#${entry.iteration}</span>
+                <span class="loop-status">Ping ${pingIcon} | Port ${portIcon} | Modbus ${modbusIcon} | Devices: ${entry.devices}</span>
+                <span class="loop-time">${entry.time}</span>
+            </div>
+        `;
+    }).join('');
 }
 
 // Add log entry
