@@ -30,6 +30,7 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_read_registers)
     websocket_api.async_register_command(hass, ws_scan_ports)
     websocket_api.async_register_command(hass, ws_add_huawei_solar)
+    websocket_api.async_register_command(hass, ws_add_huawei_solar_direct)
     _LOGGER.info("Modbus TCP Tester WebSocket API registered")
 
 
@@ -274,6 +275,74 @@ async def ws_add_huawei_solar(
             
     except Exception as err:
         _LOGGER.exception("Error adding Huawei Solar")
+        connection.send_result(msg["id"], {
+            "success": False,
+            "error": str(err)
+        })
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/add_huawei_solar_direct",
+    vol.Required("host"): str,
+    vol.Required("port"): int,
+    vol.Required("slave_id"): int,
+})
+@websocket_api.async_response
+async def ws_add_huawei_solar_direct(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Directly add Huawei Solar config entry (risky but fast)."""
+    from homeassistant.config_entries import ConfigEntry
+    
+    host = msg["host"]
+    port = msg["port"]
+    slave_id = msg["slave_id"]
+    
+    _LOGGER.info("Direct add Huawei Solar: %s:%d slave %d", host, port, slave_id)
+    
+    # Check if entry already exists
+    for entry in hass.config_entries.async_entries("huawei_solar"):
+        if entry.data.get("host") == host:
+            connection.send_result(msg["id"], {
+                "success": False,
+                "error": f"Entry for {host} already exists"
+            })
+            return
+    
+    try:
+        # Create config entry data (based on huawei_solar expected format)
+        entry_data = {
+            "host": host,
+            "port": port,
+            "slave_ids": [slave_id],
+            "elevated_permissions": False,
+        }
+        
+        # Try to create entry directly
+        entry = ConfigEntry(
+            version=1,
+            minor_version=1,
+            domain="huawei_solar",
+            title=f"Huawei Solar ({host})",
+            data=entry_data,
+            source="user",
+            options={},
+        )
+        
+        # Add entry to HA
+        await hass.config_entries.async_add(entry)
+        
+        _LOGGER.info("Direct entry created: %s", entry.entry_id)
+        connection.send_result(msg["id"], {
+            "success": True,
+            "entry_id": entry.entry_id,
+            "method": "direct"
+        })
+        
+    except Exception as err:
+        _LOGGER.exception("Error creating direct entry")
         connection.send_result(msg["id"], {
             "success": False,
             "error": str(err)

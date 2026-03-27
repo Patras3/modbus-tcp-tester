@@ -594,18 +594,18 @@ async function tryAddHuaweiSolar(host, port, slaveId) {
     
     if (autoAdd === 'off') return;
     
-    // Auto mode - brute-force retry
     const retryMinutes = parseInt(document.getElementById('retry-duration')?.value) || 5;
     autoAddRetryEndTime = Date.now() + (retryMinutes * 60 * 1000);
     autoAddAttempt = 0;
     
-    addLog(`🔄 Auto-add Huawei Solar: próbuję przez ${retryMinutes} minut...`, 'warning');
+    const method = autoAdd === 'direct' ? 'Direct Entry' : 'Config Flow';
+    addLog(`🔄 Auto-add Huawei Solar (${method}): próbuję przez ${retryMinutes} minut...`, 'warning');
     
-    await doAutoAddAttempt(host, port, slaveId);
+    await doAutoAddAttempt(host, port, slaveId, autoAdd);
 }
 
 // Single auto-add attempt
-async function doAutoAddAttempt(host, port, slaveId) {
+async function doAutoAddAttempt(host, port, slaveId, method = 'flow') {
     if (!autoAddRetryEndTime || Date.now() > autoAddRetryEndTime) {
         addLog('⏱️ Auto-add timeout - czas minął', 'error');
         autoAddRetryEndTime = null;
@@ -617,7 +617,11 @@ async function doAutoAddAttempt(host, port, slaveId) {
     addLog(`🔄 Auto-add próba #${autoAddAttempt} (${Math.floor(remainingSec/60)}m ${remainingSec%60}s pozostało)...`);
     
     try {
-        const result = await sendWsCommand('modbus_tcp_tester/add_huawei_solar', {
+        const endpoint = method === 'direct' 
+            ? 'modbus_tcp_tester/add_huawei_solar_direct'
+            : 'modbus_tcp_tester/add_huawei_solar';
+            
+        const result = await sendWsCommand(endpoint, {
             host: host,
             port: port,
             slave_id: slaveId
@@ -637,7 +641,7 @@ async function doAutoAddAttempt(host, port, slaveId) {
     // Retry after 10 seconds
     if (autoAddRetryEndTime && Date.now() < autoAddRetryEndTime) {
         addLog('⏳ Retry za 10s...', 'warning');
-        setTimeout(() => doAutoAddAttempt(host, port, slaveId), 10000);
+        setTimeout(() => doAutoAddAttempt(host, port, slaveId, method), 10000);
     }
 }
 
