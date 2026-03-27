@@ -103,30 +103,26 @@ class ModbusScanner:
             _LOGGER.debug("Ping failed: %s", err)
             result["ping"] = False
 
-        # Test TCP port connection with retry
-        socket_retries = 3
-        for socket_attempt in range(socket_retries):
+        # Test TCP port (simple socket connect - like nc -z or telnet)
+        def check_port():
+            """Check if port is open using low-level socket."""
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(3)
             try:
-                _, writer = await asyncio.wait_for(
-                    asyncio.open_connection(test_host, test_port),
-                    timeout=5
-                )
-                writer.close()
-                await writer.wait_closed()
-                result["port_open"] = True
-                _LOGGER.debug("TCP port %s:%d open (attempt %d)", test_host, test_port, socket_attempt + 1)
-                break
-            except asyncio.TimeoutError:
-                _LOGGER.debug("TCP port %s:%d timed out (attempt %d/%d)", test_host, test_port, socket_attempt + 1, socket_retries)
-                if socket_attempt < socket_retries - 1:
-                    await asyncio.sleep(1)
-            except ConnectionRefusedError:
-                _LOGGER.debug("TCP port %s:%d refused", test_host, test_port)
-                break
-            except OSError as err:
-                _LOGGER.debug("TCP test failed (attempt %d/%d): %s", socket_attempt + 1, socket_retries, err)
-                if socket_attempt < socket_retries - 1:
-                    await asyncio.sleep(1)
+                result_code = sock.connect_ex((test_host, test_port))
+                return result_code == 0
+            except Exception:
+                return False
+            finally:
+                sock.close()
+        
+        try:
+            port_open = await asyncio.get_event_loop().run_in_executor(None, check_port)
+            result["port_open"] = port_open
+            _LOGGER.debug("TCP port %s:%d: %s", test_host, test_port, "OPEN" if port_open else "CLOSED")
+        except Exception as err:
+            _LOGGER.debug("Port check failed: %s", err)
+            result["port_open"] = False
 
         # Test Modbus connection (with retry - like huawei_solar)
         # huawei_solar uses: timeout=10s, max_tries=6, exponential backoff
