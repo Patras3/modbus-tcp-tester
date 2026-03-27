@@ -594,14 +594,6 @@ async function tryAddHuaweiSolar(host, port, slaveId) {
     
     if (autoAdd === 'off') return;
     
-    if (autoAdd === 'manual') {
-        // Just show link to config flow
-        const configUrl = `/config/integrations/integration/huawei_solar`;
-        addLog(`🔗 Otwórz config flow: <a href="${configUrl}" target="_blank">Huawei Solar</a>`, 'success');
-        addLog(`📋 Host: ${host}, Port: ${port}, Slave: ${slaveId}`);
-        return;
-    }
-    
     // Auto mode - brute-force retry
     const retryMinutes = parseInt(document.getElementById('retry-duration')?.value) || 5;
     autoAddRetryEndTime = Date.now() + (retryMinutes * 60 * 1000);
