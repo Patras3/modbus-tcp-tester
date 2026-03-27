@@ -201,23 +201,21 @@ async function testConnection() {
             port: config.port
         });
         
-        // Log results
-        addLog(result.ping ? '✅ Ping: OK' : '❌ Ping: FAILED', result.ping ? 'success' : 'error');
-        addLog(result.port_open ? `✅ Port ${config.port}: OTWARTY` : `❌ Port ${config.port}: ZAMKNIĘTY`, result.port_open ? 'success' : 'error');
+        // Compact status line for loop diagnostics
+        const pingIcon = result.ping ? '✅' : '❌';
+        const portIcon = result.port_open ? '✅' : '❌';
+        const modbusIcon = result.modbus ? '✅' : (result.port_open ? '⚠️' : '❌');
+        const statusClass = (result.ping && result.port_open && result.modbus) ? 'success' : 
+                           (result.port_open ? 'warning' : 'error');
+        addLog(`📡 Status: Ping ${pingIcon} | Port ${portIcon} | Modbus ${modbusIcon}`, statusClass);
         
-        if (result.port_open) {
-            addLog(result.modbus ? '✅ Modbus TCP: ODPOWIADA' : '⚠️ Modbus TCP: Brak odpowiedzi', result.modbus ? 'success' : 'warning');
-        }
-        
-        // Summary
         if (result.ping && result.port_open && result.modbus) {
-            addLog('🎉 Połączenie działa poprawnie!', 'success');
             return true;
         } else if (result.port_open) {
-            addLog('⚠️ Port otwarty, ale Modbus nie odpowiada', 'warning');
+            addLog('⚠️ Port otwarty, ale Modbus nie odpowiada - próbuję skanować...', 'warning');
             return true; // Can still try scanning
         } else {
-            addLog('❌ Połączenie nie działa', 'error');
+            addLog('❌ Połączenie nie działa!', 'error');
             return false;
         }
     } catch (err) {
@@ -254,11 +252,9 @@ async function startScan(isLoopContinuation = false) {
     // Loop continuation - keep devices (persistent)
     
     loopIteration++;
-    addLog(`🔍 Iteracja #${loopIteration}: skanowanie ${config.host}:${config.port}`);
-    addLog(`📊 Zakres: Slave ${config.start_id} - ${config.end_id}`);
+    addLog(`🔍 Iteracja #${loopIteration}: ${config.host}:${config.port} (Slave ${config.start_id}-${config.end_id})`);
     
-    // First test connection
-    addLog('🔌 Sprawdzam połączenie...');
+    // Test connection (logs status automatically)
     const connectionOk = await testConnection();
     
     if (!connectionOk) {
