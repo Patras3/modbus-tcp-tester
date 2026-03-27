@@ -28,6 +28,7 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_stop_scan)
     websocket_api.async_register_command(hass, ws_get_devices)
     websocket_api.async_register_command(hass, ws_read_registers)
+    websocket_api.async_register_command(hass, ws_scan_ports)
     _LOGGER.info("Modbus TCP Tester WebSocket API registered")
 
 
@@ -154,4 +155,24 @@ async def ws_read_registers(
         count=msg.get("count", 10),
     )
     
+    connection.send_result(msg["id"], result)
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/scan_ports",
+    vol.Required("host"): str,
+})
+@websocket_api.async_response
+async def ws_scan_ports(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Scan for open ports on host."""
+    if _scanner is None:
+        connection.send_error(msg["id"], "scanner_not_ready", "Scanner not initialized")
+        return
+    
+    _LOGGER.info("Scanning ports on %s", msg["host"])
+    result = await _scanner.scan_ports(host=msg["host"])
     connection.send_result(msg["id"], result)

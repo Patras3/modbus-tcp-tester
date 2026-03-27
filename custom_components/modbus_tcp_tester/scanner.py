@@ -382,6 +382,44 @@ class ModbusScanner:
 
         return device
 
+    async def scan_ports(self, host: str | None = None, ports: list[int] | None = None) -> dict[str, Any]:
+        """Scan for open ports on host."""
+        test_host = host or self.host
+        
+        # Default ports to scan (common Modbus/Huawei ports)
+        if ports is None:
+            ports = [22, 23, 80, 443, 502, 1502, 4196, 5000, 6607, 8080, 8443, 8899]
+        
+        def check_port(port: int) -> bool:
+            """Check if single port is open."""
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1)  # Fast timeout for port scan
+            try:
+                result_code = sock.connect_ex((test_host, port))
+                return result_code == 0
+            except Exception:
+                return False
+            finally:
+                sock.close()
+        
+        open_ports = []
+        for port in ports:
+            try:
+                is_open = await asyncio.get_event_loop().run_in_executor(None, lambda p=port: check_port(p))
+                if is_open:
+                    open_ports.append(port)
+                    _LOGGER.debug("Port %d: OPEN", port)
+                else:
+                    _LOGGER.debug("Port %d: closed", port)
+            except Exception as err:
+                _LOGGER.debug("Port %d check error: %s", port, err)
+        
+        return {
+            "host": test_host,
+            "scanned_ports": ports,
+            "open_ports": open_ports,
+        }
+
     async def read_registers(
         self, slave_id: int, register: int, count: int = 10
     ) -> dict[str, Any] | None:

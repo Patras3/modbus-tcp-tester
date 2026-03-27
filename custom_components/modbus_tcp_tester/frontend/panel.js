@@ -234,6 +234,53 @@ async function testConnection() {
     }
 }
 
+// Scan ports
+async function scanPorts() {
+    const config = saveConfig();
+    
+    if (!config.host) {
+        addLog('❌ Podaj adres IP!', 'error');
+        return;
+    }
+    
+    addLog(`🔍 Skanowanie portów na ${config.host}...`);
+    addLog('📋 Porty: 22, 23, 80, 443, 502, 1502, 4196, 5000, 6607, 8080, 8443, 8899');
+    
+    try {
+        const result = await sendWsCommand('modbus_tcp_tester/scan_ports', {
+            host: config.host
+        });
+        
+        if (result.open_ports && result.open_ports.length > 0) {
+            addLog(`✅ Otwarte porty: ${result.open_ports.join(', ')}`, 'success');
+            
+            // Show port details
+            result.open_ports.forEach(port => {
+                const portNames = {
+                    22: 'SSH',
+                    23: 'Telnet',
+                    80: 'HTTP',
+                    443: 'HTTPS',
+                    502: 'Modbus TCP',
+                    1502: 'Modbus TCP Alt',
+                    4196: 'Huawei API',
+                    5000: 'API',
+                    6607: 'SDongle Modbus',
+                    8080: 'HTTP Alt',
+                    8443: 'HTTPS Alt',
+                    8899: 'Huawei'
+                };
+                const name = portNames[port] || 'Unknown';
+                addLog(`   🟢 Port ${port}: ${name}`, 'success');
+            });
+        } else {
+            addLog('❌ Nie znaleziono otwartych portów!', 'error');
+        }
+    } catch (err) {
+        addLog(`❌ Błąd skanowania portów: ${err.message}`, 'error');
+    }
+}
+
 // Start scan
 async function startScan(isLoopContinuation = false) {
     const config = saveConfig();
