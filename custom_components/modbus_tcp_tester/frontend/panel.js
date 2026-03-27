@@ -4,6 +4,8 @@ let scanning = false;
 let devices = [];
 let ws = null;
 let wsMessageId = 10;
+let loopEndTime = null;  // When loop should stop
+let loopIteration = 0;   // Current loop iteration
 
 // Load saved config from localStorage
 function loadConfig() {
@@ -154,18 +156,29 @@ function handleEvent(event) {
             addDevice(data);
             break;
         case 'modbus_tcp_tester_scan_completed':
-            addLog(`✨ Skanowanie zakończone! Znaleziono ${data.devices_found} urządzeń`, 'success');
+            addLog(`✨ Iteracja #${loopIteration} zakończona! Znaleziono ${data.devices_found} urządzeń`, 'success');
             setScanningState(false);
             
-            // Check loop mode
-            const loopMode = document.getElementById('loop-mode')?.checked;
-            if (loopMode) {
-                addLog('🔁 Loop mode: restart za 3s...', 'warning');
+            // Check loop mode with time
+            if (loopEndTime && Date.now() < loopEndTime) {
+                const remainingMs = loopEndTime - Date.now();
+                const remainingSec = Math.ceil(remainingMs / 1000);
+                const remainingMin = Math.floor(remainingSec / 60);
+                const remainingSecMod = remainingSec % 60;
+                addLog(`🔁 Loop: pozostało ${remainingMin}m ${remainingSecMod}s - restart za 2s...`, 'warning');
                 setTimeout(() => {
-                    if (document.getElementById('loop-mode')?.checked) {
-                        startScan();
+                    if (loopEndTime && Date.now() < loopEndTime) {
+                        startScan(true);  // true = loop continuation
+                    } else {
+                        addLog('🏁 Loop zakończony!', 'success');
+                        loopEndTime = null;
+                        loopIteration = 0;
                     }
-                }, 3000);
+                }, 2000);
+            } else if (loopEndTime) {
+                addLog('🏁 Loop zakończony (czas minął)!', 'success');
+                loopEndTime = null;
+                loopIteration = 0;
             }
             break;
     }
@@ -214,7 +227,7 @@ async function testConnection() {
 }
 
 // Start scan
-async function startScan() {
+async function startScan(isLoopContinuation = false) {
     const config = saveConfig();
     
     if (!config.host) {
@@ -222,10 +235,26 @@ async function startScan() {
         return;
     }
     
-    devices = [];
-    updateDevicesList();
+    // Get loop minutes
+    const loopMinutes = parseInt(document.getElementById('loop-minutes')?.value) || 0;
     
-    addLog(`🔍 Rozpoczynam skanowanie ${config.host}:${config.port}`);
+    // First scan in loop - set end time and clear devices
+    if (!isLoopContinuation) {
+        devices = [];
+        updateDevicesList();
+        loopIteration = 0;
+        
+        if (loopMinutes > 0) {
+            loopEndTime = Date.now() + (loopMinutes * 60 * 1000);
+            addLog(`🔁 Loop mode: ${loopMinutes} minut`, 'warning');
+        } else {
+            loopEndTime = null;
+        }
+    }
+    // Loop continuation - keep devices (persistent)
+    
+    loopIteration++;
+    addLog(`🔍 Iteracja #${loopIteration}: skanowanie ${config.host}:${config.port}`);
     addLog(`📊 Zakres: Slave ${config.start_id} - ${config.end_id}`);
     
     // First test connection
@@ -256,9 +285,13 @@ async function startScan() {
 
 // Stop scan
 async function stopScan() {
+    // Stop loop
+    loopEndTime = null;
+    loopIteration = 0;
+    
     try {
         await sendWsCommand('modbus_tcp_tester/stop_scan', {});
-        addLog('🛑 Skanowanie zatrzymane', 'warning');
+        addLog('🛑 Skanowanie i loop zatrzymane', 'warning');
         setScanningState(false);
     } catch (err) {
         addLog(`❌ Błąd zatrzymania: ${err.message}`, 'error');
@@ -290,9 +323,16 @@ function setScanningState(isScanning) {
     }
 }
 
-// Add device to list
+// Add device to list (no duplicates - update if exists)
 function addDevice(device) {
-    devices.push(device);
+    const existingIdx = devices.findIndex(d => d.slave_id === device.slave_id);
+    if (existingIdx >= 0) {
+        // Update existing device (refresh data)
+        devices[existingIdx] = { ...devices[existingIdx], ...device, lastSeen: Date.now() };
+    } else {
+        // New device
+        devices.push({ ...device, lastSeen: Date.now() });
+    }
     updateDevicesList();
 }
 

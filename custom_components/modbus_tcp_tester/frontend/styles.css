@@ -332,31 +332,6 @@ body {
     padding: 20px;
 }
 
-/* Checkbox */
-.form-group-checkbox {
-    grid-column: 1 / -1;
-    margin-top: 8px;
-}
-
-.checkbox-label {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    cursor: pointer;
-    font-size: 14px;
-}
-
-.checkbox-label input[type="checkbox"] {
-    width: 20px;
-    height: 20px;
-    accent-color: var(--primary-color);
-    cursor: pointer;
-}
-
-.checkbox-text {
-    color: var(--text-primary);
-}
-
 /* Responsive - Tablet */
 @media (max-width: 768px) {
     body {
