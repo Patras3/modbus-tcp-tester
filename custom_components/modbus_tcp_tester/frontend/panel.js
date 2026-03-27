@@ -7,6 +7,8 @@ let wsMessageId = 10;
 let loopEndTime = null;  // When loop should stop
 let loopIteration = 0;   // Current loop iteration
 let loopHistory = [];    // History of loop iterations
+let autoAddRetryEndTime = null;  // When to stop auto-add retry
+let autoAddAttempt = 0;  // Current auto-add attempt
 
 // Load saved config from localStorage
 function loadConfig() {
@@ -157,6 +159,12 @@ function handleEvent(event) {
         case 'modbus_tcp_tester_device_found':
             addLog(`✅ Znaleziono ${data.type}: ${data.model} (Slave ${data.slave_id})`, 'success');
             addDevice(data);
+            
+            // Try auto-add to Huawei Solar (only for inverter type)
+            if (data.type === 'inverter') {
+                const config = saveConfig();
+                tryAddHuaweiSolar(config.host, config.port, data.slave_id);
+            }
             break;
         case 'modbus_tcp_tester_scan_completed':
             addLog(`✨ Iteracja #${loopIteration} zakończona! Znaleziono ${data.devices_found} urządzeń`, 'success');
@@ -571,10 +579,93 @@ function clearLogs() {
     container.innerHTML = '<div class="log-empty">Brak logów. Kliknij "Scan Now" aby rozpocząć.</div>';
 }
 
+// Toggle retry duration visibility
+function updateAutoAddUI() {
+    const autoAdd = document.getElementById('auto-add')?.value || 'off';
+    const retryGroup = document.getElementById('retry-duration-group');
+    if (retryGroup) {
+        retryGroup.style.display = (autoAdd === 'auto') ? 'block' : 'none';
+    }
+}
+
+// Try to add Huawei Solar integration
+async function tryAddHuaweiSolar(host, port, slaveId) {
+    const autoAdd = document.getElementById('auto-add')?.value || 'off';
+    
+    if (autoAdd === 'off') return;
+    
+    if (autoAdd === 'manual') {
+        // Just show link to config flow
+        const configUrl = `/config/integrations/integration/huawei_solar`;
+        addLog(`🔗 Otwórz config flow: <a href="${configUrl}" target="_blank">Huawei Solar</a>`, 'success');
+        addLog(`📋 Host: ${host}, Port: ${port}, Slave: ${slaveId}`);
+        return;
+    }
+    
+    // Auto mode - brute-force retry
+    const retryMinutes = parseInt(document.getElementById('retry-duration')?.value) || 5;
+    autoAddRetryEndTime = Date.now() + (retryMinutes * 60 * 1000);
+    autoAddAttempt = 0;
+    
+    addLog(`🔄 Auto-add Huawei Solar: próbuję przez ${retryMinutes} minut...`, 'warning');
+    
+    await doAutoAddAttempt(host, port, slaveId);
+}
+
+// Single auto-add attempt
+async function doAutoAddAttempt(host, port, slaveId) {
+    if (!autoAddRetryEndTime || Date.now() > autoAddRetryEndTime) {
+        addLog('⏱️ Auto-add timeout - czas minął', 'error');
+        autoAddRetryEndTime = null;
+        return;
+    }
+    
+    autoAddAttempt++;
+    const remainingSec = Math.ceil((autoAddRetryEndTime - Date.now()) / 1000);
+    addLog(`🔄 Auto-add próba #${autoAddAttempt} (${Math.floor(remainingSec/60)}m ${remainingSec%60}s pozostało)...`);
+    
+    try {
+        const result = await sendWsCommand('modbus_tcp_tester/add_huawei_solar', {
+            host: host,
+            port: port,
+            slave_id: slaveId
+        });
+        
+        if (result.success) {
+            addLog(`✅ Huawei Solar dodany pomyślnie!`, 'success');
+            autoAddRetryEndTime = null;
+            return;
+        } else {
+            addLog(`❌ Błąd: ${result.error || 'unknown'}`, 'error');
+        }
+    } catch (err) {
+        addLog(`❌ Błąd: ${err.message}`, 'error');
+    }
+    
+    // Retry after 10 seconds
+    if (autoAddRetryEndTime && Date.now() < autoAddRetryEndTime) {
+        addLog('⏳ Retry za 10s...', 'warning');
+        setTimeout(() => doAutoAddAttempt(host, port, slaveId), 10000);
+    }
+}
+
+// Stop auto-add
+function stopAutoAdd() {
+    autoAddRetryEndTime = null;
+    addLog('🛑 Auto-add zatrzymany', 'warning');
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
     loadConfig();
     addLog('🔧 Panel Modbus TCP Tester ładowanie...');
+    
+    // Setup auto-add UI toggle
+    const autoAddSelect = document.getElementById('auto-add');
+    if (autoAddSelect) {
+        autoAddSelect.addEventListener('change', updateAutoAddUI);
+        updateAutoAddUI();
+    }
     
     try {
         await connectWebSocket();

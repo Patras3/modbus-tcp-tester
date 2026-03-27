@@ -29,6 +29,7 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_get_devices)
     websocket_api.async_register_command(hass, ws_read_registers)
     websocket_api.async_register_command(hass, ws_scan_ports)
+    websocket_api.async_register_command(hass, ws_add_huawei_solar)
     _LOGGER.info("Modbus TCP Tester WebSocket API registered")
 
 
@@ -178,3 +179,102 @@ async def ws_scan_ports(
     _LOGGER.info("Scanning ports on %s: %s", msg["host"], ports or "default")
     result = await _scanner.scan_ports(host=msg["host"], ports=ports)
     connection.send_result(msg["id"], result)
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/add_huawei_solar",
+    vol.Required("host"): str,
+    vol.Required("port"): int,
+    vol.Required("slave_id"): int,
+})
+@websocket_api.async_response
+async def ws_add_huawei_solar(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Try to add Huawei Solar integration."""
+    host = msg["host"]
+    port = msg["port"]
+    slave_id = msg["slave_id"]
+    
+    _LOGGER.info("Attempting to add Huawei Solar: %s:%d slave %d", host, port, slave_id)
+    
+    # Check if huawei_solar integration is available
+    if "huawei_solar" not in hass.config.components:
+        # Try to load it
+        try:
+            await hass.config_entries.flow.async_init(
+                "huawei_solar",
+                context={"source": "user"},
+            )
+        except Exception as err:
+            _LOGGER.error("huawei_solar not available: %s", err)
+            connection.send_result(msg["id"], {
+                "success": False,
+                "error": "huawei_solar integration not installed"
+            })
+            return
+    
+    try:
+        # Start config flow for huawei_solar
+        result = await hass.config_entries.flow.async_init(
+            "huawei_solar",
+            context={"source": "user"},
+        )
+        
+        flow_id = result.get("flow_id")
+        if not flow_id:
+            connection.send_result(msg["id"], {
+                "success": False,
+                "error": "Could not start config flow"
+            })
+            return
+        
+        # Step 1: Select connection type (Network)
+        result = await hass.config_entries.flow.async_configure(
+            flow_id,
+            user_input={"type": "Network"}
+        )
+        
+        # Step 2: Enter network details
+        if result.get("type") == "form" and result.get("step_id") == "setup_network":
+            result = await hass.config_entries.flow.async_configure(
+                flow_id,
+                user_input={
+                    "host": host,
+                    "port": port,
+                    "slave_ids": str(slave_id),
+                    "enable_parameter_configuration": False
+                }
+            )
+        
+        # Check result
+        if result.get("type") == "create_entry":
+            _LOGGER.info("Huawei Solar entry created successfully!")
+            connection.send_result(msg["id"], {
+                "success": True,
+                "entry_id": result.get("result", {}).get("entry_id") if isinstance(result.get("result"), dict) else None
+            })
+        elif result.get("type") == "form":
+            # Need more steps (e.g., login)
+            _LOGGER.info("Config flow needs more input: %s", result.get("step_id"))
+            connection.send_result(msg["id"], {
+                "success": False,
+                "error": f"Config flow needs more input: {result.get('step_id')}",
+                "flow_id": flow_id
+            })
+        else:
+            error = result.get("errors", {}).get("base", "unknown")
+            _LOGGER.error("Config flow failed: %s", error)
+            connection.send_result(msg["id"], {
+                "success": False,
+                "error": error
+            })
+            
+    except Exception as err:
+        _LOGGER.exception("Error adding Huawei Solar")
+        connection.send_result(msg["id"], {
+            "success": False,
+            "error": str(err)
+        })
