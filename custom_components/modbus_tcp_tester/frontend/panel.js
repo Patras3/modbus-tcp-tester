@@ -92,7 +92,9 @@ function connectWebSocket() {
             return;
         }
         
-        ws = new WebSocket(`ws://${location.host}/api/websocket`);
+        // Auto-detect SSL: use wss:// for HTTPS, ws:// for HTTP
+        const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        ws = new WebSocket(`${wsProtocol}//${location.host}/api/websocket`);
         
         ws.onopen = () => {
             ws.send(JSON.stringify({ type: 'auth', access_token: token }));
@@ -258,7 +260,20 @@ async function startScan(isLoopContinuation = false) {
     const connectionOk = await testConnection();
     
     if (!connectionOk) {
-        addLog('❌ Połączenie nie działa - skanowanie przerwane!', 'error');
+        addLog('❌ Połączenie nie działa!', 'error');
+        
+        // In loop mode - don't stop, just log and continue to next iteration
+        if (loopEndTime && Date.now() < loopEndTime) {
+            const remainingMs = loopEndTime - Date.now();
+            const remainingSec = Math.ceil(remainingMs / 1000);
+            addLog(`🔁 Loop: połączenie fail, retry za 5s... (${Math.floor(remainingSec/60)}m ${remainingSec%60}s pozostało)`, 'warning');
+            setTimeout(() => {
+                if (loopEndTime && Date.now() < loopEndTime) {
+                    startScan(true);
+                }
+            }, 5000);
+            return;
+        }
         return;
     }
     
