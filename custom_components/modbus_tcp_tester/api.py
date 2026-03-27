@@ -161,6 +161,7 @@ async def ws_read_registers(
 @websocket_api.websocket_command({
     vol.Required("type"): f"{DOMAIN}/scan_ports",
     vol.Required("host"): str,
+    vol.Optional("ports"): [int],
 })
 @websocket_api.async_response
 async def ws_scan_ports(
@@ -173,6 +174,7 @@ async def ws_scan_ports(
         connection.send_error(msg["id"], "scanner_not_ready", "Scanner not initialized")
         return
     
-    _LOGGER.info("Scanning ports on %s", msg["host"])
-    result = await _scanner.scan_ports(host=msg["host"])
+    ports = msg.get("ports")  # None = default ports
+    _LOGGER.info("Scanning ports on %s: %s", msg["host"], ports or "default")
+    result = await _scanner.scan_ports(host=msg["host"], ports=ports)
     connection.send_result(msg["id"], result)

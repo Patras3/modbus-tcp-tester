@@ -243,12 +243,42 @@ async function scanPorts() {
         return;
     }
     
-    addLog(`🔍 Skanowanie portów na ${config.host}...`);
-    addLog('📋 Porty: 22, 23, 80, 443, 502, 1502, 4196, 5000, 6607, 8080, 8443, 8899');
+    // Parse port input
+    const portInput = document.getElementById('port-scan')?.value?.trim() || '';
+    let ports = null;  // null = default ports
+    
+    if (portInput) {
+        if (portInput.includes('-')) {
+            // Range: 500-510
+            const [start, end] = portInput.split('-').map(p => parseInt(p.trim()));
+            if (!isNaN(start) && !isNaN(end) && start <= end && start > 0 && end <= 65535) {
+                ports = [];
+                for (let p = start; p <= end; p++) {
+                    ports.push(p);
+                }
+                addLog(`🔍 Skanowanie portów ${start}-${end} na ${config.host}...`);
+            } else {
+                addLog('❌ Nieprawidłowy zakres portów!', 'error');
+                return;
+            }
+        } else {
+            // Single port or comma-separated
+            ports = portInput.split(',').map(p => parseInt(p.trim())).filter(p => !isNaN(p) && p > 0 && p <= 65535);
+            if (ports.length === 0) {
+                addLog('❌ Nieprawidłowy port!', 'error');
+                return;
+            }
+            addLog(`🔍 Skanowanie portów ${ports.join(', ')} na ${config.host}...`);
+        }
+    } else {
+        addLog(`🔍 Skanowanie portów na ${config.host}...`);
+        addLog('📋 Porty: 22, 23, 80, 443, 502, 1502, 4196, 5000, 6607, 8080, 8443, 8899');
+    }
     
     try {
         const result = await sendWsCommand('modbus_tcp_tester/scan_ports', {
-            host: config.host
+            host: config.host,
+            ports: ports
         });
         
         if (result.open_ports && result.open_ports.length > 0) {
