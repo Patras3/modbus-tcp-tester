@@ -156,6 +156,17 @@ function handleEvent(event) {
         case 'modbus_tcp_tester_scan_completed':
             addLog(`✨ Skanowanie zakończone! Znaleziono ${data.devices_found} urządzeń`, 'success');
             setScanningState(false);
+            
+            // Check loop mode
+            const loopMode = document.getElementById('loop-mode')?.checked;
+            if (loopMode) {
+                addLog('🔁 Loop mode: restart za 3s...', 'warning');
+                setTimeout(() => {
+                    if (document.getElementById('loop-mode')?.checked) {
+                        startScan();
+                    }
+                }, 3000);
+            }
             break;
     }
 }
