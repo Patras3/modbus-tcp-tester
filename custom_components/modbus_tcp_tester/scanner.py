@@ -3,6 +3,7 @@ import asyncio
 import logging
 import socket
 import struct
+import subprocess
 from typing import Any, Callable
 
 from pymodbus.client import AsyncModbusTcpClient
@@ -86,7 +87,23 @@ class ModbusScanner:
             "modbus": False,
         }
 
-        # Test socket connection (async) with retry
+        # Test ICMP ping (real ping)
+        try:
+            ping_result = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    ["ping", "-c", "1", "-W", "2", test_host],
+                    capture_output=True,
+                    timeout=5
+                )
+            )
+            result["ping"] = (ping_result.returncode == 0)
+            _LOGGER.debug("ICMP ping to %s: %s", test_host, "OK" if result["ping"] else "FAIL")
+        except Exception as err:
+            _LOGGER.debug("Ping failed: %s", err)
+            result["ping"] = False
+
+        # Test TCP port connection with retry
         socket_retries = 3
         for socket_attempt in range(socket_retries):
             try:
@@ -97,19 +114,17 @@ class ModbusScanner:
                 writer.close()
                 await writer.wait_closed()
                 result["port_open"] = True
-                result["ping"] = True
-                _LOGGER.debug("Socket connection to %s:%d successful (attempt %d)", test_host, test_port, socket_attempt + 1)
+                _LOGGER.debug("TCP port %s:%d open (attempt %d)", test_host, test_port, socket_attempt + 1)
                 break
             except asyncio.TimeoutError:
-                _LOGGER.debug("Socket connection to %s:%d timed out (attempt %d/%d)", test_host, test_port, socket_attempt + 1, socket_retries)
+                _LOGGER.debug("TCP port %s:%d timed out (attempt %d/%d)", test_host, test_port, socket_attempt + 1, socket_retries)
                 if socket_attempt < socket_retries - 1:
                     await asyncio.sleep(1)
             except ConnectionRefusedError:
-                result["ping"] = True  # Host exists but port refused
-                _LOGGER.debug("Connection refused to %s:%d", test_host, test_port)
+                _LOGGER.debug("TCP port %s:%d refused", test_host, test_port)
                 break
             except OSError as err:
-                _LOGGER.debug("Socket test failed (attempt %d/%d): %s", socket_attempt + 1, socket_retries, err)
+                _LOGGER.debug("TCP test failed (attempt %d/%d): %s", socket_attempt + 1, socket_retries, err)
                 if socket_attempt < socket_retries - 1:
                     await asyncio.sleep(1)
 
