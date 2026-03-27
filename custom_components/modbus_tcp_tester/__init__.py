@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 
 from homeassistant.components import frontend
@@ -57,8 +58,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register services (legacy, for compatibility)
     await _async_register_services(hass, scanner)
 
-    # Register sidebar panel
-    panel_url = f"/{DOMAIN}_panel/panel.html"
+    # Register sidebar panel with cache-busting timestamp
+    cache_buster = int(time.time())
+    panel_url = f"/{DOMAIN}_panel/panel.html?v={cache_buster}"
 
     frontend.async_register_built_in_panel(
         hass,
