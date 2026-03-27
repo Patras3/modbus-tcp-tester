@@ -11,9 +11,12 @@
 - ✅ **Skanowanie slave ID** (1-247)
 - ✅ **Automatyczne wykrywanie** typu urządzenia (inverter, dongle, battery, meter)
 - ✅ **Test połączenia** (ping, port, Modbus)
-- ✅ **Odczyt parametrów** (model, firmware, moc, napięcie)
+- ✅ **Loop mode** — ciągłe skanowanie przez X minut (diagnostyka stabilności)
+- ✅ **Loop History** — historia iteracji z statusem połączenia
+- ✅ **Mobile responsive** — działa na telefonie
+- ✅ **SSL auto-detect** — ws:// lub wss:// w zależności od HTTPS
 - ✅ **Real-time logi**
-- ✅ **Rate limiting** (nie spamuje sieci)
+- ✅ **Rate limiting** z cooldown (jak huawei_solar)
 - ✅ **localStorage** — zapamiętuje ostatnie ustawienia
 
 ## 📦 Instalacja
@@ -21,186 +24,136 @@
 ### Przez HACS (zalecane)
 
 1. Otwórz HACS → Integrations
-2. Kliknij "Custom repositories" (trzy kropki w prawym górnym rogu)
+2. Kliknij menu (⋮) → **Custom repositories**
 3. Dodaj: `https://github.com/Patras3/modbus-tcp-tester`
 4. Kategoria: **Integration**
-5. Kliknij **Install**
-6. Zrestartuj Home Assistant
-7. **GOTOWE!** Panel pojawi się w sidebarze
+5. Znajdź "Modbus TCP Tester" i kliknij **Download**
+6. **Zrestartuj Home Assistant**
+
+### ⚠️ WAŻNE: Dodaj integrację!
+
+**Po restarcie musisz jeszcze dodać integrację:**
+
+1. Settings → Devices & Services
+2. Kliknij **+ Add Integration**
+3. Szukaj: **Modbus TCP Tester**
+4. Kliknij i potwierdź
+
+**Dopiero teraz** panel pojawi się w sidebarze! 🎉
 
 ### Ręcznie
 
-1. Pobierz folder `custom_components/modbus_tcp_tester`
-2. Skopiuj do `<config>/custom_components/modbus_tcp_tester`
-3. Pobierz `www/modbus-tester-panel.js`
-4. Skopiuj do `<config>/www/modbus-tester-panel.js`
-5. Zrestartuj Home Assistant
+```bash
+cd /config/custom_components
+curl -L https://github.com/Patras3/modbus-tcp-tester/archive/refs/tags/v1.3.0.tar.gz | tar xz
+mv modbus-tcp-tester-1.3.0/custom_components/modbus_tcp_tester .
+rm -rf modbus-tcp-tester-1.3.0
+```
+
+Potem restart HA i dodaj integrację jak wyżej.
 
 ## 🚀 Użycie
 
 ### 1. Otwórz panel
 
-Po instalacji i restarcie HA, w **sidebarze** pojawi się nowa pozycja: **🔍 Modbus Tester**
+Po dodaniu integracji, w **sidebarze** pojawi się: **Modbus Tester**
 
 ### 2. Skonfiguruj
 
-W panelu zobaczysz sekcję **Konfiguracja**:
-
-- **IP Address:** `192.168.2.5` (adres Twojego dongle/invertera)
-- **Port:** `502` (lub `6607` dla nowszych firmware)
-- **Start Slave ID:** `1` (pierwsze ID do skanowania)
-- **End Slave ID:** `100` (ostatnie ID do skanowania)
-
-**Wszystko dynamiczne!** Możesz zmieniać na bieżąco.
+- **IP Address:** adres Twojego dongle/invertera
+- **Port:** `502` (standard Modbus TCP)
+- **Start/End Slave ID:** zakres do skanowania (domyślnie 1-10)
+- **Loop (minuty):** 0 = wyłączony, 1-60 = ciągłe skanowanie
 
 ### 3. Skanuj
 
-1. Kliknij **🔍 Scan Now**
+1. Kliknij **Scan Now**
 2. Obserwuj logi w czasie rzeczywistym
-3. Wykryte urządzenia pojawią się w sekcji **Discovered Devices**
+3. Wykryte urządzenia pojawią się w **Discovered Devices**
 
-### 4. Testuj połączenie
+### 4. Loop mode (diagnostyka stabilności)
 
-Przed skanowaniem możesz kliknąć **🔌 Test Connection** żeby sprawdzić:
-- ✅ Ping
-- ✅ Port otwarty/zamknięty
-- ✅ Modbus TCP odpowiada
+Ustaw **Loop = 5** (minut) i kliknij Scan Now:
+- Skanowanie powtarza się co ~15-20s
+- **Loop History** pokazuje status każdej iteracji
+- Ping ✅/❌ | Port ✅/❌ | Modbus ✅/❌ | Devices: X
+- Idealne do testowania stabilności połączenia SDongle
 
 ## 📊 Przykłady wykrytych urządzeń
 
 ### Falownik SUN2000
 
 ```
-☀️ Slave ID: 1
-Model: SUN2000-10KTL-M1
-Firmware: V200R001C00SPC172
-Type: inverter
-Active Power: 5234 W
-Grid Voltage A: 235.2 V
+☀️ Slave 1: SUN2000-10KTL-M1
+   Typ: inverter
+   Firmware: V200R001C00SPC172
+   S/N: HV12345678901
 ```
 
-### Dongle SDongleA-05
+### Loop History
 
 ```
-📡 Slave ID: 100
-Model: SDongleA-05
-Firmware: V200R022C10SPC300
-Type: dongle
-```
-
-### Bateria LUNA2000
-
-```
-🔋 Slave ID: 1
-Model: LUNA2000-15-S0
-Type: battery
-```
-
-### Licznik DTSU666
-
-```
-⚡ Slave ID: 2
-Model: DTSU666-H
-Type: meter
-```
-
-## ⚙️ Usługi (Services)
-
-### `modbus_tcp_tester.scan`
-
-Rozpocznij skanowanie (np. z automatyzacji):
-
-```yaml
-service: modbus_tcp_tester.scan
-data:
-  host: 192.168.2.5
-  port: 502
-  start_id: 1
-  end_id: 100
-```
-
-### `modbus_tcp_tester.stop_scan`
-
-Zatrzymaj skanowanie:
-
-```yaml
-service: modbus_tcp_tester.stop_scan
-```
-
-### `modbus_tcp_tester.read_registers`
-
-Odczytaj surowe rejestry:
-
-```yaml
-service: modbus_tcp_tester.read_registers
-data:
-  host: 192.168.2.5
-  port: 502
-  slave_id: 1
-  register: 30000
-  count: 15
+#4  Ping ✅ | Port ✅ | Modbus ✅ | Devices: 1    02:06:40
+#3  Ping ✅ | Port ✅ | Modbus ✅ | Devices: 1    02:06:26
+#2  Ping ✅ | Port ✅ | Modbus ⚠️ | Devices: 0    02:06:03
+#1  Ping ❌ | Port ❌ | Modbus ❌ | Devices: 0    02:05:50
 ```
 
 ## 🔧 Troubleshooting
 
 ### Panel nie pojawia się w sidebarze
 
-1. Sprawdź czy integracja jest załadowana: Settings → System → Logs → filtruj `modbus_tcp_tester`
-2. Hard refresh przeglądarki: Ctrl+Shift+R (Windows/Linux) lub Cmd+Shift+R (Mac)
-3. Wyczyść cache przeglądarki
+**Najpierw:** Czy dodałeś integrację?
+1. Settings → Devices & Services → + Add Integration
+2. Szukaj "Modbus TCP Tester"
+
+**Jeśli tak:** 
+- Hard refresh: Ctrl+Shift+R
+- Wyczyść cache przeglądarki
+- Sprawdź logi: Settings → System → Logs → filtruj `modbus_tcp_tester`
+
+### WebSocket error (SSL)
+
+Jeśli widzisz "insecure WebSocket" błąd:
+- Integracja automatycznie wykrywa HTTPS i używa wss://
+- Zaktualizuj do najnowszej wersji
 
 ### Brak połączenia
 
-1. Sprawdź czy Modbus TCP jest włączony w urządzeniu (Settings → Communication → Modbus TCP)
-2. Sprawdź port (502 lub 6607 — zależy od firmware)
-3. Sprawdź firewall w routerze/urządzeniu
+1. Sprawdź czy Modbus TCP jest włączony w urządzeniu
+2. Port 502 (standard) lub 6607 (niektóre firmware)
+3. Firewall?
 4. Użyj **Test Connection** żeby zdiagnozować
 
-### Wolne skanowanie
+### Wolne/niestabilne połączenie
 
-- Rate limiting: 0.05s delay między slave ID
-- Dla 100 slave ID → ~5 sekund
-- **To normalne** — nie spamuje sieci!
-- Dla szybszego: zmniejsz zakres (np. 1-20)
-
-### Nie znajduje urządzeń
-
-1. Sprawdź czy używasz właściwego portu (502 vs 6607)
-2. Spróbuj zmienić zakres (np. 1-10, potem 90-110)
-3. Sprawdź logi HA (Settings → System → Logs)
+- SDongle obsługuje tylko 1 połączenie naraz
+- Integracja używa cooldown 100ms między requestami
+- Użyj **Loop mode** żeby monitorować stabilność
 
 ## 💡 Wskazówki
 
-### Szybkie skanowanie
+### Typowe Slave ID
 
-**Dla inverterów i liczników:**
-```
-Start: 1
-End: 10
-```
-
-**Dla dongle:**
-```
-Start: 90
-End: 110
-```
-
-### localStorage
-
-Twoje ostatnie ustawienia (IP, port, zakres) są zapisywane automatycznie w przeglądarce. Przy kolejnym otwarciu panelu zostaną przywrócone.
+| Urządzenie | Slave ID |
+|------------|----------|
+| Inverter   | 1        |
+| Meter      | 2        |
+| Battery    | 200      |
+| Dongle     | nie odpowiada (bridge only) |
 
 ### Best practices
 
-1. Najpierw użyj **Test Connection** żeby sprawdzić dostępność
+1. **Test Connection** przed skanowaniem
 2. Zacznij od małego zakresu (1-10)
-3. Rozszerz jeśli potrzeba (1-50, 1-100)
-4. Zapisz znalezione slave ID dla przyszłości
+3. Użyj **Loop mode** do diagnostyki stabilności
+4. SDongle potrzebuje ~2s cooldown między połączeniami
 
 ## 📝 Wspierane urządzenia
 
 **Huawei:**
 - ✅ SUN2000 (inverters)
-- ✅ SDongleA-05, EMMA (dongles)
+- ✅ SDongleA-05, EMMA (dongles jako bridge)
 - ✅ LUNA2000 (batteries)
 - ✅ DTSU666, DDSU666 (meters)
 
@@ -209,13 +162,28 @@ Twoje ostatnie ustawienia (IP, port, zakres) są zapisywane automatycznie w prze
 
 ## 🔄 Changelog
 
+### v1.3.0 (2026-03-27)
+
+- ✅ **Loop mode** — ciągłe skanowanie przez X minut
+- ✅ **Loop History** — historia iteracji z statusem
+- ✅ **SSL auto-detect** — automatyczny wss:// dla HTTPS
+- ✅ **Mobile responsive** — działa na telefonie
+- ✅ **Cooldown** jak huawei_solar (100ms między requestami)
+- ✅ **Cache busting** — wymusza przeładowanie plików frontend
+- ✅ Retry logic dla stabilności
+- ✅ Persistent devices (nie znikają między iteracjami)
+
+### v1.2.0 (2026-03-26)
+
+- ✅ WebSocket API (zamiast REST)
+- ✅ pymodbus 3.12+ kompatybilność
+- ✅ Exponential backoff retry
+
 ### v1.1.0 (2026-03-26)
 
-- ✅ **Sidebar panel** — natychmiastowy dostęp z głównego menu
-- ✅ **Dynamiczna konfiguracja** — brak hardkodowanego IP/port
-- ✅ **localStorage** — zapamiętuje ustawienia
-- ✅ Usunięto config entry (integracja singleton)
-- ✅ Lepszy UX dla testowania "na żywo"
+- ✅ Sidebar panel
+- ✅ Dynamiczna konfiguracja
+- ✅ localStorage
 
 ### v1.0.0 (2026-03-26)
 
