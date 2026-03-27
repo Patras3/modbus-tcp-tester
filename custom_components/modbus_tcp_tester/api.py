@@ -293,7 +293,10 @@ async def ws_add_huawei_solar_direct(
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Directly add Huawei Solar config entry (risky but fast)."""
+    """Directly add Huawei Solar config entry (risky but fast).
+    
+    Uses exact same data format as huawei_solar config_flow._create_or_update_entry()
+    """
     from homeassistant.config_entries import ConfigEntry
     
     host = msg["host"]
@@ -312,20 +315,24 @@ async def ws_add_huawei_solar_direct(
             return
     
     try:
-        # Create config entry data (based on huawei_solar expected format)
+        # EXACT format from huawei_solar config_flow._create_or_update_entry()
+        # See: https://github.com/wlcrs/huawei_solar/blob/main/config_flow.py
         entry_data = {
-            "host": host,
-            "port": port,
-            "slave_ids": [slave_id],
-            "elevated_permissions": False,
+            "host": host,                              # CONF_HOST
+            "port": port,                              # CONF_PORT  
+            "slave_ids": [slave_id],                   # CONF_SLAVE_IDS - must be list!
+            "enable_parameter_configuration": False,   # CONF_ENABLE_PARAMETER_CONFIGURATION
+            "username": None,                          # CONF_USERNAME
+            "password": None,                          # CONF_PASSWORD
         }
         
-        # Try to create entry directly
+        # Try to create entry directly using ConfigEntry constructor
+        # huawei_solar uses version=1, see their __init__.py
         entry = ConfigEntry(
             version=1,
             minor_version=1,
             domain="huawei_solar",
-            title=f"Huawei Solar ({host})",
+            title=f"SUN2000 ({host})",  # They use model_name from inverter_info
             data=entry_data,
             source="user",
             options={},
